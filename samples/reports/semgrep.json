@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "check_id": "javascript.express.security.audit.sqli.raw-sql",
+      "path": "routes/login.ts",
+      "start": {
+        "line": 42
+      },
+      "extra": {
+        "severity": "HIGH",
+        "message": "User input reaches a raw SQL query.",
+        "lines": "sequelize.query(`SELECT * FROM Users WHERE email = '${email}'`)",
+        "metadata": {
+          "confidence": "HIGH",
+          "cwe": [
+            "CWE-89"
+          ],
+          "references": [
+            "https://owasp.org/www-community/attacks/SQL_Injection"
+          ]
+        }
+      }
+    }
+  ]
+}

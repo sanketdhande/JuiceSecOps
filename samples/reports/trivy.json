@@ -1,0 +1,33 @@
+{
+  "Results": [
+    {
+      "Target": "package-lock.json",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-0001",
+          "PkgName": "jsonwebtoken",
+          "InstalledVersion": "0.4.0",
+          "FixedVersion": "9.0.0",
+          "Severity": "HIGH",
+          "Title": "Example JWT verification weakness",
+          "Description": "Synthetic record used for thesis pipeline demonstration.",
+          "CweIDs": [
+            "CWE-345"
+          ],
+          "References": [
+            "https://github.com/auth0/node-jsonwebtoken"
+          ]
+        }
+      ],
+      "Secrets": [
+        {
+          "RuleID": "aws-access-key-id",
+          "Title": "Potential committed credential",
+          "Match": "AKIAIOSFODNN7EXAMPLE",
+          "Severity": "CRITICAL",
+          "StartLine": 8
+        }
+      ]
+    }
+  ]
+}

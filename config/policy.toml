@@ -1,0 +1,28 @@
+[gate]
+block_severity_floor = "critical"
+review_severity_floor = "high"
+block_risk_score = 70
+review_risk_score = 45
+fail_closed_on_provider_error = true
+max_findings_per_run = 300
+
+[privacy]
+redact_secrets = true
+max_evidence_chars = 500
+max_diff_chars = 7000
+max_snippet_chars = 2500
+
+[changes]
+max_changed_files = 20
+include_extensions = [".ts", ".js", ".html", ".json", ".yml", ".yaml", ".md"]
+include_paths = [
+  "app.ts",
+  "server.ts",
+  "Dockerfile",
+  "package.json",
+  "config/",
+  "lib/",
+  "models/",
+  "routes/",
+  "frontend/src/",
+]

@@ -1,0 +1,9 @@
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+results/
+targets/juice-shop/
+__pycache__/
+*.pyc

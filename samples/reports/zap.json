@@ -1,0 +1,26 @@
+{
+  "site": [
+    {
+      "@name": "http://localhost:3000",
+      "alerts": [
+        {
+          "pluginid": "10016",
+          "name": "Web Browser XSS Protection Not Enabled",
+          "riskcode": "1",
+          "riskdesc": "Low",
+          "confidence": "Medium",
+          "desc": "Synthetic ZAP baseline alert used for local testing.",
+          "solution": "Configure the appropriate response headers.",
+          "reference": "https://www.zaproxy.org/docs/alerts/10016/",
+          "instances": [
+            {
+              "uri": "http://localhost:3000/",
+              "method": "GET",
+              "evidence": "X-XSS-Protection header missing"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

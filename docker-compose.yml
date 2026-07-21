@@ -1,0 +1,6 @@
+services:
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    container_name: thesis-juice-shop
+    ports:
+      - "3000:3000"

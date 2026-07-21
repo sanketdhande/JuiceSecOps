@@ -1,0 +1,100 @@
+name: juice-shop-security
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/juice-shop-security.yml"
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+  pull_request:
+    paths:
+      - ".github/workflows/juice-shop-security.yml"
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+
+jobs:
+  security-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+          python -m pip install semgrep
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Clone Juice Shop target
+        run: ./scripts/fetch_juice_shop.sh
+
+      - name: Run Semgrep
+        run: |
+          mkdir -p results/ci
+          semgrep --config p/owasp-top-ten --json --output results/ci/semgrep.json targets/juice-shop
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: fs
+          scan-ref: targets/juice-shop
+          format: json
+          output: results/ci/trivy.json
+          scanners: vuln,secret
+          exit-code: 0
+
+      - name: Run Juice Shop for ZAP
+        run: |
+          docker network create juice-shop-net || true
+          docker run -d --name thesis-juice-shop --network juice-shop-net -p 3000:3000 bkimminich/juice-shop
+
+      - name: Run ZAP baseline
+        run: |
+          docker run --rm \
+            --network juice-shop-net \
+            -v "$PWD/results/ci:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json || true
+
+      - name: Run thesis security gate
+        run: |
+          python -m juicesecops \
+            --input results/ci/semgrep.json \
+            --input results/ci/trivy.json \
+            --input results/ci/zap.json \
+            --provider heuristic \
+            --target-repo targets/juice-shop \
+            --output results/ci
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-security-report
+          path: results/ci
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f thesis-juice-shop || true
+          docker network rm juice-shop-net || true
