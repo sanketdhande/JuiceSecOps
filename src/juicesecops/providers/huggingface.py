@@ -37,7 +37,6 @@ class HuggingFaceSecurityProvider:
     def _load_pipe(self) -> Any:
         if self._pipe is not None:
             return self._pipe
-        import torch
         from transformers import pipeline
 
         self._pipe = pipeline(
@@ -99,7 +98,9 @@ class HuggingFaceSecurityProvider:
             finding_fingerprint=finding.fingerprint,
             disposition=str(payload.get("disposition", "review")),
             risk_score=int(payload.get("risk_score", 50)),
-            true_positive_likelihood=float(payload.get("true_positive_likelihood", finding.confidence)),
+            true_positive_likelihood=float(
+                payload.get("true_positive_likelihood", finding.confidence)
+            ),
             exploitability=str(payload.get("exploitability", "unknown")),
             summary=str(payload.get("summary", "LLM security triage")),
             rationale=str(payload.get("rationale", "No rationale provided.")),
@@ -114,8 +115,9 @@ class HuggingFaceSecurityProvider:
             {
                 "role": "system",
                 "content": (
-                    "You are a secure code reviewer for OWASP Juice Shop. Inspect only the provided "
-                    "code change. Return JSON only."
+                    "You are a secure code reviewer for OWASP Juice Shop. "
+                    "Inspect only the provided code change. "
+                    "Return JSON only."
                 ),
             },
             {
@@ -135,7 +137,11 @@ class HuggingFaceSecurityProvider:
                                     "severity": "critical|high|medium|low|info",
                                     "category": "code|secret|dependency|dynamic",
                                     "confidence": "float 0..1",
-                                    "location": {"path": "string", "line": "integer|null", "url": ""},
+                                    "location": {
+                                        "path": "string",
+                                        "line": "integer|null",
+                                        "url": "",
+                                    },
                                     "cwe": ["string"],
                                     "references": ["string"],
                                     "remediation": "string",

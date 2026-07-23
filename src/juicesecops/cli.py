@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .evaluation import evaluate_precision, summarize_findings
+from .parsers import load_findings
 from .pipeline import run_pipeline
 from .policy import Policy
 from .providers import HeuristicProvider, HuggingFaceSecurityProvider
-from .reporting import write_report
+from .reporting import print_report_summary, write_report
 
 
 def _parse_context(values: list[str]) -> dict[str, str]:
@@ -24,12 +26,27 @@ def _provider(name: str, model_id: str):
     return HeuristicProvider()
 
 
+def _existing_paths(values: list[str], label: str) -> list[Path]:
+    paths = [Path(value) for value in values]
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        names = ", ".join(missing)
+        raise argparse.ArgumentTypeError(f"missing {label} path(s): {names}")
+    return paths
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="juicesecops",
         description="Run a Juice Shop DevSecOps security gate with scanner fusion and LLM review.",
     )
     parser.add_argument("--input", action="append", default=[], help="JSON scanner report path")
+    parser.add_argument(
+        "--ground-truth",
+        action="append",
+        default=[],
+        help="Verified finding JSON path used for optional precision comparison.",
+    )
     parser.add_argument(
         "--target-repo",
         default="targets/juice-shop",
@@ -71,7 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    existing_inputs = [Path(path) for path in args.input if Path(path).exists()]
+    try:
+        existing_inputs = _existing_paths(args.input, "--input")
+        ground_truth_paths = _existing_paths(args.ground_truth, "--ground-truth")
+    except argparse.ArgumentTypeError as exc:
+        parser.error(str(exc))
+
     if not existing_inputs:
         parser.error("at least one existing --input report is required")
 
@@ -87,7 +109,16 @@ def main(argv: list[str] | None = None) -> int:
         head_ref=args.head_ref,
         review_changes=not args.skip_change_review,
     )
+    report.metadata["finding_summary"] = summarize_findings(report.findings)
+    if ground_truth_paths:
+        ground_truth: list = []
+        for path in ground_truth_paths:
+            ground_truth.extend(load_findings(path))
+        report.metadata["precision_comparison"] = evaluate_precision(
+            report.findings, ground_truth
+        )
     write_report(args.output, report)
+    print_report_summary(report)
     if report.gate.passed or args.no_fail:
         return 0
     return 1

@@ -59,7 +59,11 @@ def _parse_semgrep(data: dict[str, Any]) -> list[Finding]:
                 Finding(
                     tool="semgrep",
                     rule_id=str(item.get("check_id", "unknown")),
-                    title=str(metadata.get("shortlink") or item.get("check_id") or "Semgrep finding"),
+                    title=str(
+                        metadata.get("shortlink")
+                        or item.get("check_id")
+                        or "Semgrep finding"
+                    ),
                     description=str(extra.get("message", "")),
                     severity=Severity.parse(extra.get("severity")),
                     category="code",
@@ -88,7 +92,11 @@ def _parse_trivy(data: dict[str, Any]) -> list[Finding]:
                     Finding(
                         tool="trivy",
                         rule_id=str(item.get("VulnerabilityID", "unknown")),
-                        title=str(item.get("Title") or item.get("VulnerabilityID") or "Dependency finding"),
+                        title=str(
+                            item.get("Title")
+                            or item.get("VulnerabilityID")
+                            or "Dependency finding"
+                        ),
                         description=str(item.get("Description", "")),
                         severity=Severity.parse(item.get("Severity")),
                         category="dependency",
@@ -113,7 +121,10 @@ def _parse_trivy(data: dict[str, Any]) -> list[Finding]:
                         category="secret",
                         confidence=0.95,
                         location=Location(path=target, line=item.get("StartLine")),
-                        remediation="Revoke and rotate the credential, then remove it from Git history.",
+                        remediation=(
+                            "Revoke and rotate the credential, then remove it from Git "
+                            "history."
+                        ),
                         evidence=str(item.get("Match", "")),
                     )
                 )

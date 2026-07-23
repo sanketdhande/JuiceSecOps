@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import tempfile
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from juicesecops.diffing import collect_changes
 from juicesecops.policy import Policy
@@ -14,8 +15,6 @@ def _run(repo, *args):
 
 class DiffingTests(unittest.TestCase):
     def test_collect_changes_reads_relevant_git_diff(self):
-        from pathlib import Path
-
         with tempfile.TemporaryDirectory() as temp_dir:
             repo = Path(temp_dir) / "repo"
             repo.mkdir()

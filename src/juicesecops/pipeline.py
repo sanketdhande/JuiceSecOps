@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .diffing import collect_changes
-from .models import Finding, PipelineReport, TriageDecision
+from .models import Finding, Location, PipelineReport, Severity, TriageDecision
 from .parsers import load_findings
 from .policy import Policy, evaluate_gate
 from .providers.base import SecurityProvider
@@ -21,6 +22,63 @@ def _sanitize_finding(finding: Finding, policy: Policy) -> Finding:
     finding.evidence = _redact(finding.evidence, policy.max_evidence_chars)
     finding.description = _redact(finding.description, policy.max_evidence_chars)
     return finding
+
+
+def _provider_error_fingerprint(provider: SecurityProvider, path: str, exc: Exception) -> str:
+    stable = "\x1f".join(
+        ["provider-error", provider.name, provider.model, path, type(exc).__name__, str(exc)]
+    )
+    return hashlib.sha256(stable.encode("utf-8")).hexdigest()[:20]
+
+
+def _review_error_finding(
+    provider: SecurityProvider,
+    path: str,
+    exc: Exception,
+) -> Finding:
+    return Finding(
+        tool="llm-diff",
+        rule_id="provider.review_error",
+        title="Change review provider failed",
+        description=(
+            f"The {provider.name} provider could not review the change in {path}: "
+            f"{type(exc).__name__}: {exc}"
+        ),
+        severity=Severity.HIGH,
+        category="code",
+        confidence=1.0,
+        location=Location(path=path),
+        remediation=(
+            "Retry the model call, inspect provider configuration, or fall back to the "
+            "heuristic provider."
+        ),
+        fingerprint=_provider_error_fingerprint(provider, path, exc),
+        metadata={"source": "diff-review", "provider_error": f"{type(exc).__name__}: {exc}"},
+    )
+
+
+def _provider_error_decision(
+    finding: Finding,
+    provider: SecurityProvider,
+    policy: Policy,
+    exc: Exception,
+) -> TriageDecision:
+    return TriageDecision(
+        finding_fingerprint=finding.fingerprint,
+        disposition="block" if policy.fail_closed_on_provider_error else "review",
+        risk_score=100 if policy.fail_closed_on_provider_error else 50,
+        true_positive_likelihood=finding.confidence,
+        exploitability="unknown",
+        summary="Triage provider failed",
+        rationale=(
+            "The provider response was not trusted because the model call failed."
+        ),
+        remediation=finding.remediation,
+        provider=provider.name,
+        model=provider.model,
+        latency_ms=0.0,
+        error=f"{type(exc).__name__}: {exc}",
+    )
 
 
 def _deduplicate(findings: list[Finding]) -> list[Finding]:
@@ -48,6 +106,7 @@ def run_pipeline(
     started = time.perf_counter()
     context = context or {}
     findings: list[Finding] = []
+    forced_decisions: dict[str, TriageDecision] = {}
     for input_path in inputs:
         path = Path(input_path)
         if not path.exists():
@@ -58,7 +117,14 @@ def run_pipeline(
     if review_changes and target_repo is not None:
         changes = collect_changes(target_repo, policy, base_ref=base_ref, head_ref=head_ref)
         for change in changes:
-            findings.extend(provider.review_change(change, context))
+            try:
+                findings.extend(provider.review_change(change, context))
+            except Exception as exc:
+                error_finding = _review_error_finding(provider, change.path, exc)
+                findings.append(error_finding)
+                forced_decisions[error_finding.fingerprint] = _provider_error_decision(
+                    error_finding, provider, policy, exc
+                )
 
     findings = _deduplicate(findings)
     if len(findings) > policy.max_findings_per_run:
@@ -71,6 +137,10 @@ def run_pipeline(
 
     decisions: list[TriageDecision] = []
     for finding in findings:
+        forced = forced_decisions.get(finding.fingerprint)
+        if forced is not None:
+            decisions.append(forced)
+            continue
         try:
             decisions.append(provider.triage(finding, context))
         except Exception as exc:
@@ -82,7 +152,9 @@ def run_pipeline(
                     true_positive_likelihood=finding.confidence,
                     exploitability="unknown",
                     summary="Triage provider failed",
-                    rationale="The provider response was not trusted because the model call failed.",
+                    rationale=(
+                        "The provider response was not trusted because the model call failed."
+                    ),
                     remediation=finding.remediation,
                     provider=provider.name,
                     model=provider.model,
@@ -110,5 +182,7 @@ def run_pipeline(
             "context": context,
             "base_ref": base_ref or "working-tree",
             "head_ref": head_ref,
+            "target_repo": str(target_repo) if target_repo is not None else "",
+            "target_name": Path(target_repo).name if target_repo is not None else "",
         },
     )

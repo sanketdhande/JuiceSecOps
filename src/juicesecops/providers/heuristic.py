@@ -25,7 +25,10 @@ _CHANGE_PATTERNS = [
         "severity": "high",
         "category": "code",
         "remediation": "Use parameterized Sequelize replacements or ORM query builders.",
-        "description": "String interpolation in a raw SQL query can allow untrusted input to reach the database.",
+        "description": (
+            "String interpolation in a raw SQL query can allow untrusted input to reach "
+            "the database."
+        ),
         "cwe": ["CWE-89"],
         "confidence": 0.87,
     },
@@ -36,7 +39,10 @@ _CHANGE_PATTERNS = [
         "severity": "high",
         "category": "code",
         "remediation": "Avoid unsafe HTML sinks and keep Angular sanitization enabled.",
-        "description": "A DOM sink that accepts HTML can enable cross-site scripting if attacker input reaches it.",
+        "description": (
+            "A DOM sink that accepts HTML can enable cross-site scripting if attacker "
+            "input reaches it."
+        ),
         "cwe": ["CWE-79"],
         "confidence": 0.84,
     },
@@ -46,7 +52,9 @@ _CHANGE_PATTERNS = [
         "title": "Dynamic code execution introduced",
         "severity": "high",
         "category": "code",
-        "remediation": "Remove dynamic evaluation and use explicit parsing or allowlisted dispatch.",
+        "remediation": (
+            "Remove dynamic evaluation and use explicit parsing or allowlisted dispatch."
+        ),
         "description": "Dynamic code execution increases the risk of code injection.",
         "cwe": ["CWE-94"],
         "confidence": 0.91,
@@ -58,7 +66,10 @@ _CHANGE_PATTERNS = [
         "severity": "high",
         "category": "code",
         "remediation": "Avoid shell execution or allowlist arguments before invoking subprocesses.",
-        "description": "Command execution primitives become dangerous when fed with request-controlled values.",
+        "description": (
+            "Command execution primitives become dangerous when fed with request-"
+            "controlled values."
+        ),
         "cwe": ["CWE-78"],
         "confidence": 0.85,
     },
@@ -69,7 +80,10 @@ _CHANGE_PATTERNS = [
         "severity": "medium",
         "category": "code",
         "remediation": "Redirect only to allowlisted internal routes or trusted hosts.",
-        "description": "Directly redirecting to user-controlled input can enable phishing and token leakage.",
+        "description": (
+            "Directly redirecting to user-controlled input can enable phishing and token "
+            "leakage."
+        ),
         "cwe": ["CWE-601"],
         "confidence": 0.78,
     },
@@ -91,7 +105,10 @@ _CHANGE_PATTERNS = [
         "severity": "high",
         "category": "secret",
         "remediation": "Move secrets to CI/CD secret storage and rotate any exposed values.",
-        "description": "Committed secrets weaken the pipeline and frequently become reusable credentials.",
+        "description": (
+            "Committed secrets weaken the pipeline and frequently become reusable "
+            "credentials."
+        ),
         "cwe": ["CWE-798"],
         "confidence": 0.90,
     },
@@ -163,7 +180,9 @@ class HeuristicProvider:
                 "Deterministic context score combines severity, confidence, exposure, and "
                 f"{exploitability} exploitability."
             ),
-            remediation=finding.remediation or "Review the finding and apply a least-privilege fix.",
+            remediation=(
+                finding.remediation or "Review the finding and apply a least-privilege fix."
+            ),
             provider=self.name,
             model=self.model,
             latency_ms=round((time.perf_counter() - start) * 1000, 3),
@@ -190,7 +209,9 @@ class HeuristicProvider:
                         cwe=list(pattern["cwe"]),
                         remediation=pattern["remediation"],
                         evidence=line[:200],
-                        fingerprint=_finding_fingerprint(change.path, pattern["rule_id"], line_number),
+                        fingerprint=_finding_fingerprint(
+                            change.path, pattern["rule_id"], line_number
+                        ),
                         metadata={"source": "diff-review"},
                     )
                 )

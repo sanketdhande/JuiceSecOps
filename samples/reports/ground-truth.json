@@ -1,0 +1,70 @@
+{
+  "findings": [
+    {
+      "tool": "ground-truth",
+      "rule_id": "javascript.express.security.audit.sqli.raw-sql",
+      "title": "javascript.express.security.audit.sqli.raw-sql",
+      "description": "Verified SQL injection risk in the Juice Shop login route sample.",
+      "severity": "high",
+      "category": "code",
+      "confidence": 1.0,
+      "location": {
+        "path": "routes/login.ts",
+        "line": 42
+      },
+      "cwe": [
+        "CWE-89"
+      ],
+      "references": [
+        "https://owasp.org/www-community/attacks/SQL_Injection"
+      ],
+      "remediation": "Use parameterized queries for the login path."
+    },
+    {
+      "tool": "ground-truth",
+      "rule_id": "CVE-2026-0001",
+      "title": "Example JWT verification weakness",
+      "description": "Verified vulnerable dependency in the Juice Shop package-lock sample.",
+      "severity": "high",
+      "category": "dependency",
+      "confidence": 1.0,
+      "location": {
+        "path": "package-lock.json"
+      },
+      "cwe": [
+        "CWE-345"
+      ],
+      "references": [
+        "https://github.com/auth0/node-jsonwebtoken"
+      ],
+      "remediation": "Upgrade jsonwebtoken to a fixed version."
+    },
+    {
+      "tool": "ground-truth",
+      "rule_id": "aws-access-key-id",
+      "title": "Potential committed credential",
+      "description": "Verified committed credential in the Juice Shop package-lock sample.",
+      "severity": "critical",
+      "category": "secret",
+      "confidence": 1.0,
+      "location": {
+        "path": "package-lock.json",
+        "line": 8
+      },
+      "remediation": "Revoke, rotate, and remove the credential from source control."
+    },
+    {
+      "tool": "ground-truth",
+      "rule_id": "10016",
+      "title": "Web Browser XSS Protection Not Enabled",
+      "description": "Verified missing browser protection header in the Juice Shop ZAP sample.",
+      "severity": "low",
+      "category": "dynamic",
+      "confidence": 1.0,
+      "location": {
+        "url": "http://localhost:3000/"
+      },
+      "remediation": "Configure the expected response headers."
+    }
+  ]
+}
