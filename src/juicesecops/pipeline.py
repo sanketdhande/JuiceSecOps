@@ -49,7 +49,10 @@ def run_pipeline(
     context = context or {}
     findings: list[Finding] = []
     for input_path in inputs:
-        findings.extend(load_findings(input_path))
+        path = Path(input_path)
+        if not path.exists():
+            continue
+        findings.extend(load_findings(path))
 
     changes = []
     if review_changes and target_repo is not None:

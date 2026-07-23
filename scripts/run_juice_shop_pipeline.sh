@@ -9,6 +9,7 @@ OUTPUT_DIR="${ROOT_DIR}/results/juice-shop"
 NETWORK_NAME="juice-shop-net"
 
 mkdir -p "${OUTPUT_DIR}"
+chmod 777 "${OUTPUT_DIR}"
 
 if [ ! -d "${TARGET_REPO}/.git" ] && [ ! -f "${TARGET_REPO}/package.json" ]; then
   "${ROOT_DIR}/scripts/fetch_juice_shop.sh" "${TARGET_REPO}"
@@ -36,12 +37,22 @@ docker run --rm \
   --network "${NETWORK_NAME}" \
   -v "${OUTPUT_DIR}:/zap/wrk:rw" \
   ghcr.io/zaproxy/zaproxy:stable \
-  zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json >/dev/null || true
+  zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json 2>&1 | tee "${OUTPUT_DIR}/zap-baseline.log" || true
+
+echo "Contents of ${OUTPUT_DIR} after ZAP:"
+ls -la "${OUTPUT_DIR}" || true
+
+ZAP_INPUT=""
+if [ -f "${OUTPUT_DIR}/zap.json" ]; then
+  ZAP_INPUT="--input ${OUTPUT_DIR}/zap.json"
+else
+  echo "ZAP report not found, skipping ZAP input"
+fi
 
 PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --input "${OUTPUT_DIR}/semgrep.json" \
   --input "${OUTPUT_DIR}/trivy.json" \
-  --input "${OUTPUT_DIR}/zap.json" \
+  $ZAP_INPUT \
   --provider "${PROVIDER}" \
   --model-id "${MODEL_ID}" \
   --target-repo "${TARGET_REPO}" \

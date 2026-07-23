@@ -71,13 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.input:
-        parser.error("at least one --input report is required")
+    existing_inputs = [Path(path) for path in args.input if Path(path).exists()]
+    if not existing_inputs:
+        parser.error("at least one existing --input report is required")
 
     policy = Policy.load(args.policy)
     provider = _provider(args.provider, args.model_id)
     report = run_pipeline(
-        inputs=[Path(path) for path in args.input],
+        inputs=existing_inputs,
         provider=provider,
         policy=policy,
         target_repo=Path(args.target_repo),

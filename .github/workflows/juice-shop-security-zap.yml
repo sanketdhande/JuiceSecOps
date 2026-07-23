@@ -17,6 +17,7 @@ jobs:
       - name: Prepare workspace
         run: |
           mkdir -p results/ci
+          chmod 777 results/ci
 
       - name: Start Juice Shop
         run: |
@@ -29,7 +30,9 @@ jobs:
             --network juice-shop-net \
             -v "$PWD/results/ci:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json || true
+            zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json 2>&1 | tee results/ci/zap-baseline.log || true
+          echo "Contents of results/ci after ZAP:"
+          ls -la results/ci || true
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
