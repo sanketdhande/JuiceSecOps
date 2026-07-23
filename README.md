@@ -116,7 +116,7 @@ If you want the LLM to inspect actual code changes, edit files inside `targets/j
 ## CI/CD behavior
 
 The GitHub Actions workflows run the deterministic baseline and scanner stages on `main`.
-The current report workflow uses the heuristic provider for stable CI execution.
+The current report workflow uses the heuristic provider for stable CI execution, because the full `openai/gpt-oss-120b` model is too large for standard GitHub-hosted runners.
 
 For local LLM evaluation, use the Hugging Face provider with `./scripts/run_juice_shop_pipeline_hf.sh` or `./scripts/run_juice_shop_pipeline.sh ... huggingface ...`.
 

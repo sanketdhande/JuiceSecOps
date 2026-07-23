@@ -22,7 +22,7 @@ jobs:
       - name: Install project and Semgrep
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[hf,dev]'
+          python -m pip install -e '.[dev]'
           python -m pip install semgrep
 
       - name: Prepare workspace
@@ -74,8 +74,7 @@ jobs:
             --input results/ci/semgrep.json \
             --input results/ci/trivy.json \
             $ZAP_INPUT \
-            --provider huggingface \
-            --model-id openai/gpt-oss-120b \
+            --provider heuristic \
             --target-repo targets/juice-shop \
             --output results/ci
 
