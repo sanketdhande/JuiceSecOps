@@ -3,9 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_REPO="${1:-${ROOT_DIR}/targets/juice-shop}"
-PROVIDER="${2:-heuristic}"
-MODEL_ID="${3:-openai/gpt-oss-120b}"
-OUTPUT_DIR="${ROOT_DIR}/results/juice-shop"
+OUTPUT_DIR="${ROOT_DIR}/results/juice-shop-hf"
 NETWORK_NAME="juice-shop-net"
 
 mkdir -p "${OUTPUT_DIR}"
@@ -42,7 +40,7 @@ PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --input "${OUTPUT_DIR}/semgrep.json" \
   --input "${OUTPUT_DIR}/trivy.json" \
   --input "${OUTPUT_DIR}/zap.json" \
-  --provider "${PROVIDER}" \
-  --model-id "${MODEL_ID}" \
+  --provider huggingface \
+  --model-id openai/gpt-oss-120b \
   --target-repo "${TARGET_REPO}" \
   --output "${OUTPUT_DIR}"

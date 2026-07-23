@@ -48,7 +48,8 @@ Security Report + Deterministic Gate
 - `config/policy.toml`: deterministic gate and scope controls.
 - `samples/reports/`: synthetic Semgrep, Trivy, and ZAP reports for offline demonstration.
 - `scripts/run_demo.sh`: quick local demo without heavyweight external scanners.
-- `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops`.
+- `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with configurable provider/model.
+- `scripts/run_juice_shop_pipeline_hf.sh`: full pipeline example using the Hugging Face LLM provider.
 - `.github/workflows/juice-shop-security.yml`: CI example matching the thesis architecture.
 
 ## Hugging Face model integration
@@ -98,29 +99,26 @@ python -m pip install -e '.[hf,dev]'
 ./scripts/fetch_juice_shop.sh
 ```
 
-Then run:
+Then run the local Hugging Face evaluation:
 
 ```bash
-juicesecops \
-  --input samples/reports/semgrep.json \
-  --input samples/reports/trivy.json \
-  --input samples/reports/zap.json \
-  --provider huggingface \
-  --model-id openai/gpt-oss-120b \
-  --target-repo targets/juice-shop \
-  --output results/hf-run \
-  --no-fail
+./scripts/run_juice_shop_pipeline_hf.sh
+```
+
+Or use the generic pipeline script with a selected provider and model:
+
+```bash
+./scripts/run_juice_shop_pipeline.sh targets/juice-shop huggingface openai/gpt-oss-120b
 ```
 
 If you want the LLM to inspect actual code changes, edit files inside `targets/juice-shop/` first or pass `--base-ref` and `--head-ref` from a real branch comparison.
 
 ## CI/CD behavior
 
-The GitHub Actions workflow now runs:
+The GitHub Actions workflows run the deterministic baseline and scanner stages on `main`.
+The current report workflow uses the heuristic provider for stable CI execution.
 
-1. `ruff check src tests`
-2. `python -m unittest discover -s tests -v`
-3. Semgrep, Trivy, ZAP, and the thesis security gate
+For local LLM evaluation, use the Hugging Face provider with `./scripts/run_juice_shop_pipeline_hf.sh` or `./scripts/run_juice_shop_pipeline.sh ... huggingface ...`.
 
 The workflow clones OWASP Juice Shop during CI instead of expecting the target application to be committed into this repository.
 
