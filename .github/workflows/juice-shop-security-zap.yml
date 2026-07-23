@@ -1,0 +1,57 @@
+name: juice-shop-security-zap
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+  pull_request:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p results/ci
+
+      - name: Start Juice Shop
+        run: |
+          docker network create juice-shop-net || true
+          docker run -d --name thesis-juice-shop --network juice-shop-net -p 3000:3000 bkimminich/juice-shop
+
+      - name: Run ZAP baseline
+        run: |
+          docker run --rm \
+            --network juice-shop-net \
+            -v "$PWD/results/ci:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json || true
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-zap-report
+          path: results/ci/zap.json
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f thesis-juice-shop || true
+          docker network rm juice-shop-net || true

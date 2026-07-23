@@ -1,0 +1,52 @@
+name: juice-shop-security-semgrep
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+  pull_request:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install semgrep
+
+      - name: Clone Juice Shop target
+        run: ./scripts/fetch_juice_shop.sh
+
+      - name: Run Semgrep
+        run: |
+          mkdir -p results/ci
+          semgrep --config p/owasp-top-ten --json --output results/ci/semgrep.json targets/juice-shop
+
+      - name: Upload Semgrep report
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-semgrep-report
+          path: results/ci/semgrep.json

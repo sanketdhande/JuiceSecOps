@@ -1,0 +1,51 @@
+name: juice-shop-security-trivy
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+  pull_request:
+    paths:
+      - "README.md"
+      - "pyproject.toml"
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "scripts/**"
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p results/ci
+
+      - name: Clone Juice Shop target
+        run: ./scripts/fetch_juice_shop.sh
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: targets/juice-shop
+          format: json
+          output: results/ci/trivy.json
+          scanners: vuln,secret
+          exit-code: 0
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-trivy-report
+          path: results/ci/trivy.json
