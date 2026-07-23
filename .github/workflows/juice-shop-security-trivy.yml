@@ -3,21 +3,8 @@ name: juice-shop-security-trivy
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "README.md"
-      - "pyproject.toml"
-      - "src/**"
-      - "tests/**"
-      - "config/**"
-      - "scripts/**"
-  pull_request:
-    paths:
-      - "README.md"
-      - "pyproject.toml"
-      - "src/**"
-      - "tests/**"
-      - "config/**"
-      - "scripts/**"
+    branches:
+      - main
 
 jobs:
   trivy:
