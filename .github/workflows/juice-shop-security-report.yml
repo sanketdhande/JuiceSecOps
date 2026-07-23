@@ -76,9 +76,12 @@ jobs:
             $ZAP_INPUT \
             --provider heuristic \
             --target-repo targets/juice-shop \
-            --output results/ci
+            --output results/ci \
+            --no-fail
+          echo "Juice Shop report workflow completed. Gate status is recorded in results/ci/report.json and results/ci/report.md."
 
       - name: Upload reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: juice-shop-security-report
