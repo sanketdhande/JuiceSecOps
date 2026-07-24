@@ -1,0 +1,152 @@
+# DVWA counterpart to juice-shop-security-report.yml. Traditional scanners
+# (Semgrep, Trivy, ZAP) run first and write JSON reports under results/dvwa/.
+# The "Run thesis security gate" step then invokes the Python package in
+# src/juicesecops/ via `python -m juicesecops` (entry point:
+# src/juicesecops/__main__.py -> cli.py -> pipeline.py). That step is also
+# where the LLM/heuristic stage runs: pipeline.py diffs targets/dvwa and
+# hands each changed file to the selected --provider (here: heuristic,
+# providers/heuristic.py -- a regex stand-in, not a real model call; the
+# real one is providers/huggingface.py and only runs locally, never in CI).
+# All findings + the pass/fail gate end up in results/dvwa/report.json and
+# report.md, uploaded as the dvwa-security-report artifact below.
+#
+# Unlike Juice Shop (a single Node container with no setup step), DVWA is a
+# PHP app with a MariaDB backend: it ships its own docker-compose stack
+# (targets/dvwa/compose.yml) and needs a one-time "Create / Reset Database"
+# request against setup.php before it's actually scannable -- see the
+# "Start DVWA" and "Initialize the DVWA database" steps below.
+
+name: dvwa-security-report
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project and Semgrep
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+          python -m pip install semgrep
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p results/dvwa-ci
+          chmod 777 results/dvwa-ci
+
+      - name: Clone DVWA target
+        run: ./scripts/fetch_dvwa.sh targets/dvwa
+
+      # --- traditional scanners: no LLM/heuristic involved yet, just JSON output ---
+      - name: Run Semgrep
+        run: semgrep --config p/owasp-top-ten --json --output results/dvwa-ci/semgrep.json targets/dvwa
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: targets/dvwa
+          format: json
+          output: results/dvwa-ci/trivy.json
+          scanners: vuln,secret
+          exit-code: 0
+
+      - name: Start DVWA
+        working-directory: targets/dvwa
+        run: docker compose up -d
+
+      - name: Wait for DVWA to accept connections
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4280/login.php >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "DVWA did not come up in time, continuing anyway"
+
+      - name: Initialize the DVWA database
+        run: |
+          # DVWA has no working login or challenges until its database is
+          # created. setup.php is reachable pre-auth for exactly this reason
+          # (there is no user table to log in against yet) -- pull its CSRF
+          # token and submit the "Create / Reset Database" form once.
+          COOKIE_JAR="$(mktemp)"
+          SETUP_PAGE="$(curl -fsS -c "${COOKIE_JAR}" http://127.0.0.1:4280/setup.php || true)"
+          SETUP_TOKEN="$(printf '%s' "${SETUP_PAGE}" | grep -oP "user_token'\s+value='\K[^']+" | head -n1 || true)"
+          if [ -n "${SETUP_TOKEN}" ]; then
+            curl -fsS -b "${COOKIE_JAR}" -c "${COOKIE_JAR}" \
+              --data-urlencode "create_db=Create / Reset Database" \
+              --data-urlencode "user_token=${SETUP_TOKEN}" \
+              http://127.0.0.1:4280/setup.php >/dev/null || echo "Database setup request failed, continuing anyway"
+          else
+            echo "Could not find setup.php's CSRF token, continuing without database setup"
+          fi
+          rm -f "${COOKIE_JAR}"
+
+      - name: Run ZAP baseline
+        run: |
+          chmod 777 results/dvwa-ci
+          docker run --rm \
+            --network host \
+            -v "$PWD/results/dvwa-ci:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://127.0.0.1:4280 -J zap.json 2>&1 | tee results/dvwa-ci/zap-baseline.log || true
+          echo "Contents of results/dvwa-ci after ZAP:"
+          ls -la results/dvwa-ci || true
+
+      # --- juicesecops: ingests the 3 scanner reports above, adds the
+      # LLM/heuristic diff-review + triage stages (see pipeline.py), then
+      # applies the deterministic pass/fail gate (policy.py) ---
+      - name: Run thesis security gate
+        run: |
+          if [ -f results/dvwa-ci/zap.json ]; then
+            ZAP_INPUT="--input results/dvwa-ci/zap.json"
+          else
+            echo "ZAP report missing, continuing without ZAP input"
+            ZAP_INPUT=""
+          fi
+          # targets/dvwa is a fresh --depth 1 clone with no working-tree
+          # edits, so a plain `git diff HEAD` is always empty and the LLM
+          # change-review stage never runs. Diff against git's well-known
+          # empty-tree object instead, so every in-scope file is treated as
+          # "added" and reviewed as a one-time baseline scan of the checkout.
+          EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+          python -m juicesecops \
+            --input results/dvwa-ci/semgrep.json \
+            --input results/dvwa-ci/trivy.json \
+            $ZAP_INPUT \
+            --provider heuristic \
+            --target-repo targets/dvwa \
+            --policy config/policy-dvwa.toml \
+            --base-ref "$EMPTY_TREE" \
+            --head-ref HEAD \
+            --output results/dvwa-ci \
+            --no-fail
+          echo "DVWA report workflow completed. Gate status is recorded in results/dvwa-ci/report.json and results/dvwa-ci/report.md."
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dvwa-security-report
+          path: results/dvwa-ci
+
+      - name: Clean up
+        if: always()
+        working-directory: targets/dvwa
+        run: docker compose down --volumes || true

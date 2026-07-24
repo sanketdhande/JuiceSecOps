@@ -5,6 +5,7 @@ dist/
 build/
 results/
 targets/juice-shop/
+targets/dvwa/
 *.egg-info/
 __pycache__/
 *.pyc

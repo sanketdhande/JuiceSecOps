@@ -22,14 +22,17 @@ from ._prompted import PromptedLLMProvider
 # NOTE: this is a best-effort mapping, spot-checked against huggingface.co
 # search results but not by actually downloading every file. Community GGUF
 # quantizations churn -- especially for smaller/niche security fine-tunes --
-# so a given repo/filename may be renamed, re-quantized, or removed.
-# "pentest-7b" in particular is lower-confidence: it points at the base
-# model repo (which reportedly also hosts a GGUF file) rather than a
-# dedicated GGUF repo -- verify it on huggingface.co before depending on it
-# for a real run. The CI workflow runs each model with continue-on-error so
-# one missing/broken quant doesn't sink the whole comparison. You can always
-# bypass this table entirely by passing --model-id "<repo_id>:<filename-glob>"
-# directly.
+# so a given repo/filename may be renamed, re-quantized, or removed. The CI
+# workflow runs each model with continue-on-error so one missing/broken
+# quant doesn't sink the whole comparison. You can always bypass this table
+# entirely by passing --model-id "<repo_id>:<filename-glob>" directly.
+#
+# "pentest-7b" was removed from this table: VextLabsinc/pentest-7b (see
+# openweight.py, which uses it directly via transformers) has no .gguf file
+# on huggingface.co at all -- confirmed via the HF API's model-info
+# `siblings` list, not just a guess -- so Llama.from_pretrained() can never
+# find a match and every call fails instantly. If a real GGUF quant of it
+# shows up later, add it back with a repo_id that actually hosts a .gguf.
 GGUF_MODEL_CHOICES: dict[str, dict[str, str]] = {
     # Single-file repos (GGUF-my-repo style) -- "*.gguf" is unambiguous
     # since each repo holds exactly one quantized file.
@@ -39,11 +42,6 @@ GGUF_MODEL_CHOICES: dict[str, dict[str, str]] = {
     },
     "foundation-sec-8b": {
         "repo_id": "fdtn-ai/Foundation-Sec-8B-Q4_K_M-GGUF",
-        "filename": "*.gguf",
-    },
-    # Lower confidence -- see note above.
-    "pentest-7b": {
-        "repo_id": "VextLabsinc/pentest-7b",
         "filename": "*.gguf",
     },
     # Note: "Qwen3-Coder-7B-Instruct" does not exist (Qwen3-Coder only

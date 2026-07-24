@@ -126,6 +126,13 @@ jobs:
     # whole workflow -- the "combine" job below just skips whatever legs
     # didn't produce a report.json.
     continue-on-error: true
+    # Without this, GitHub's unconfigurable default (6 hours) is what
+    # eventually kills a stuck/too-slow leg -- silently, mid-process, after
+    # burning most of a workday. policy-openweight.toml's 20-file cap should
+    # finish well inside this; if a leg still hits the timeout, that's a
+    # real regression worth seeing fail fast rather than another 6-hour
+    # wait.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -168,6 +175,7 @@ jobs:
             --provider gguf \
             --model-id "${{ matrix.model }}" \
             --target-repo targets/juice-shop \
+            --policy config/policy-openweight.toml \
             --base-ref "$EMPTY_TREE" \
             --head-ref HEAD \
             --output "results/openweight/${{ matrix.model }}" \

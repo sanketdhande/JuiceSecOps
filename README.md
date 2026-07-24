@@ -70,6 +70,7 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 - `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with configurable provider/model.
 - `scripts/run_juice_shop_pipeline_hf.sh`: full pipeline example using the Hugging Face LLM provider (`openai/gpt-oss-120b`).
 - `scripts/run_juice_shop_pipeline_openweight.sh`: full pipeline example using a small, free open-weight security model (default `Foundation-Sec-8B-Reasoning`).
+- `scripts/fetch_dvwa.sh`, `scripts/run_dvwa_pipeline*.sh`, `config/policy-dvwa.toml`: the same set of tooling for the DVWA target -- see [DVWA target](#dvwa-target) below.
 - `.github/workflows/`: split CI workflows for linting, reporting, Semgrep, Trivy, and ZAP stages.
 
 ## Hugging Face model integration
@@ -132,7 +133,7 @@ This still needs `pip install -e '.[hf,dev]'` and enough local GPU/CPU memory to
 
 `src/juicesecops/providers/gguf.py` (`--provider gguf`) runs a quantized GGUF build of the same small open-weight models via `llama-cpp-python` (CPU-only, via `llama.cpp`) instead of full-precision `transformers`. This is the provider that can actually complete on a standard GitHub-hosted runner, which has no GPU.
 
-`--model-id` accepts a short alias from `GGUF_MODEL_CHOICES` (same models as the `openweight` provider table above) or an explicit `"repo_id:filename-glob"` string:
+`--model-id` accepts a short alias from `GGUF_MODEL_CHOICES` (`foundation-sec-8b-reasoning`, `foundation-sec-8b`, `qwen-coder-7b`, `codegemma-7b` -- a subset of the `openweight` provider table above; `pentest-7b` is excluded here because `VextLabsinc/pentest-7b` has no `.gguf` file on huggingface.co, confirmed via the HF API's `siblings` list) or an explicit `"repo_id:filename-glob"` string:
 
 ```bash
 python -m pip install -e '.[gguf,dev]'
@@ -151,7 +152,7 @@ A manual-only (`workflow_dispatch`) workflow that runs **every** model in `GGUF_
 
 1. `scan` runs Semgrep/Trivy/ZAP once and uploads the JSON reports as an artifact.
 2. `prepare-matrix` reads `GGUF_MODEL_CHOICES` straight from the Python package, so the matrix can't drift out of sync with the code.
-3. `llm-review` is a matrix job, one leg per model, each running `--provider gguf --model-id <alias>` against the shared scanner reports. `continue-on-error` is set at the job level: a renamed/missing GGUF quantization for one model does not fail the whole workflow, it's just absent from the final comparison.
+3. `llm-review` is a matrix job, one leg per model, each running `--provider gguf --model-id <alias>` against the shared scanner reports, scoped with `--policy config/policy-openweight.toml` (same as `policy.toml` but `max_changed_files = 20` instead of 150 -- CPU inference costs one serial LLM call per file per model, so the full 150-file scope took over 5 hours per model and was still running when it hit GitHub's default 6-hour job ceiling). `continue-on-error` is set at the job level: a renamed/missing GGUF quantization for one model does not fail the whole workflow, it's just absent from the final comparison. `timeout-minutes: 120` makes a stuck/too-slow leg fail fast and visibly instead of silently riding out that 6-hour default.
 4. `combine` downloads whichever per-model reports succeeded and runs the new `juicesecops-compare-models` CLI (`src/juicesecops/compare_models_cli.py`) to merge them into `comparison.md` / `comparison.json`, with the shared traditional (scanner) findings listed once and each model's LLM findings, severities, dispositions, and gate result listed side by side.
 
 You can run the same merge locally against any set of `report.json` files produced with different `--provider`/`--model-id` combinations:
@@ -162,6 +163,39 @@ python -m juicesecops.compare_models_cli \
   --report qwen-coder-7b=results/qwen-coder-7b/report.json \
   --output results/comparison
 ```
+
+## DVWA target
+
+The pipeline also supports [DVWA (Damn Vulnerable Web Application)](https://github.com/digininja/DVWA) as a second target, alongside Juice Shop. `--target-repo` and `--policy` are already generic in `cli.py`/`pipeline.py`, so no package code changes were needed -- DVWA gets its own fetch script, policy file, pipeline scripts, and CI workflows mirroring the Juice Shop ones exactly:
+
+| Juice Shop | DVWA |
+| --- | --- |
+| `scripts/fetch_juice_shop.sh` | `scripts/fetch_dvwa.sh` |
+| `config/policy.toml` | `config/policy-dvwa.toml` |
+| `scripts/run_juice_shop_pipeline.sh` / `_hf.sh` / `_openweight.sh` | `scripts/run_dvwa_pipeline.sh` / `_hf.sh` / `_openweight.sh` |
+| `.github/workflows/juice-shop-security-report.yml` | `.github/workflows/dvwa-security-report.yml` |
+| `.github/workflows/juice-shop-security-report-openweight.yml` | `.github/workflows/dvwa-security-report-openweight.yml` |
+
+`config/policy-dvwa.toml` scopes the LLM diff-review stage to DVWA's PHP layout (`vulnerabilities/`, `hackable/`, `includes/`, `login.php`, `setup.php`, `config/`) instead of Juice Shop's TypeScript one.
+
+### Why DVWA needs extra steps Juice Shop doesn't
+
+Juice Shop is a single Node container with no setup step (`docker run bkimminich/juice-shop`). DVWA is a PHP app with a MariaDB backend and ships its own `compose.yml` (web + `db` services) in the cloned repo, so the pipeline scripts/workflows run that instead of a bare `docker run`. DVWA also has no working login or challenge pages until its database exists -- there's no user table to log in against on a fresh container -- so `setup.php` is deliberately reachable pre-auth. Every DVWA script/workflow does this once before scanning:
+
+1. `docker compose up -d` from the cloned `targets/dvwa` checkout.
+2. Poll `http://127.0.0.1:4280/login.php` until it responds.
+3. `GET /setup.php`, scrape the CSRF `user_token` out of the HTML, and `POST` the "Create / Reset Database" form with it.
+4. Run ZAP's baseline scan against `http://127.0.0.1:4280` with `--network host` (so the ZAP container reaches the same host loopback port `compose.yml` published, without depending on docker compose's internal network naming).
+
+This only sets up the database -- it does not automate DVWA's own login or its per-session "security level" cookie (low/medium/high/impossible), so the ZAP baseline scan runs unauthenticated, the same as Juice Shop's.
+
+```bash
+./scripts/run_dvwa_pipeline.sh targets/dvwa heuristic
+# or, for a real LLM instead of the regex heuristic:
+./scripts/run_dvwa_pipeline_openweight.sh targets/dvwa foundation-sec-8b-reasoning
+```
+
+CI: `dvwa-security-report.yml` mirrors the default heuristic Juice Shop workflow (runs on push to `main` and `workflow_dispatch`); `dvwa-security-report-openweight.yml` mirrors the multi-model GGUF comparison workflow (`workflow_dispatch` only, since it's the slowest one).
 
 ## LLM and scanner comparison
 
@@ -208,7 +242,7 @@ The repository is structured around the thesis methodology:
 - Prototype implementation: GitHub Actions workflows, Docker-compatible scanning scripts, and the Python orchestration package provide the experimental system.
 - Experimental evaluation: repeatable JSON/Markdown artifacts, a heuristic baseline, and fixed vulnerable targets support comparison of detection coverage, false positives, and runtime.
 
-The primary implemented target is OWASP Juice Shop. The evaluation approach can be extended to other intentionally vulnerable systems such as DVWA or vulnerable microservices, but those are not bundled in this repository today.
+The primary implemented target is OWASP Juice Shop, and DVWA is bundled as a second target (see [DVWA target](#dvwa-target) above) to demonstrate the approach generalizes across intentionally vulnerable systems rather than being Juice-Shop-specific. It can be extended further to other targets such as vulnerable microservices the same way DVWA was: a fetch script, a scoped policy file, and pipeline scripts/workflows pointing `--target-repo`/`--policy` at the new checkout.
 
 ## Quick start
 
@@ -253,12 +287,12 @@ The current report workflow uses the heuristic provider for stable CI execution,
 
 For local LLM evaluation, use the Hugging Face provider with `./scripts/run_juice_shop_pipeline_hf.sh` or `./scripts/run_juice_shop_pipeline.sh ... huggingface ...`.
 
-The workflow clones OWASP Juice Shop during CI instead of expecting the target application to be committed into this repository.
+The workflow clones OWASP Juice Shop during CI instead of expecting the target application to be committed into this repository. The same applies to the DVWA workflows (`dvwa-security-report.yml`, `dvwa-security-report-openweight.yml`), which clone DVWA into `targets/dvwa` and default to the heuristic provider for the same reason.
 
 ## Notes
 
 - The deterministic gate is the final authority. The LLM is advisory but integrated into the decision pipeline.
-- `targets/juice-shop` is intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
+- `targets/juice-shop` and `targets/dvwa` are intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
 - The full 120B model is expensive and hardware-intensive. The heuristic provider is the local fallback for thesis development and tests.
 - The current prototype is optimized for reproducible thesis experiments rather than production deployment hardening.
 
