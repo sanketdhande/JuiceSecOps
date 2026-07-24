@@ -19,31 +19,41 @@ from ._prompted import PromptedLLMProvider
 # Hugging Face. Loaded lazily via llama_cpp.Llama.from_pretrained(), which
 # downloads (and caches) the matching file straight from the repo.
 #
-# NOTE: this is a best-effort mapping. Community GGUF quantizations churn
-# -- especially for smaller/niche security fine-tunes like
-# foundation-sec-8b-reasoning or pentest-7b -- so a given repo/filename may
-# be renamed, re-quantized, or simply not exist yet. Verify an entry on
-# huggingface.co before depending on it for a real run; the CI workflow
-# runs each model with continue-on-error so one missing quant doesn't sink
-# the whole comparison. You can always bypass this table entirely by
-# passing --model-id "<repo_id>:<filename-glob>" directly.
+# NOTE: this is a best-effort mapping, spot-checked against huggingface.co
+# search results but not by actually downloading every file. Community GGUF
+# quantizations churn -- especially for smaller/niche security fine-tunes --
+# so a given repo/filename may be renamed, re-quantized, or removed.
+# "pentest-7b" in particular is lower-confidence: it points at the base
+# model repo (which reportedly also hosts a GGUF file) rather than a
+# dedicated GGUF repo -- verify it on huggingface.co before depending on it
+# for a real run. The CI workflow runs each model with continue-on-error so
+# one missing/broken quant doesn't sink the whole comparison. You can always
+# bypass this table entirely by passing --model-id "<repo_id>:<filename-glob>"
+# directly.
 GGUF_MODEL_CHOICES: dict[str, dict[str, str]] = {
+    # Single-file repos (GGUF-my-repo style) -- "*.gguf" is unambiguous
+    # since each repo holds exactly one quantized file.
     "foundation-sec-8b-reasoning": {
-        "repo_id": "fdtn-ai/Foundation-Sec-8B-Reasoning-GGUF",
-        "filename": "*Q4_K_M.gguf",
+        "repo_id": "fdtn-ai/Foundation-Sec-8B-Reasoning-Q8_0-GGUF",
+        "filename": "*.gguf",
     },
     "foundation-sec-8b": {
-        "repo_id": "fdtn-ai/Foundation-Sec-8B-GGUF",
-        "filename": "*Q4_K_M.gguf",
+        "repo_id": "fdtn-ai/Foundation-Sec-8B-Q4_K_M-GGUF",
+        "filename": "*.gguf",
     },
+    # Lower confidence -- see note above.
     "pentest-7b": {
-        "repo_id": "VextLabsinc/pentest-7b-GGUF",
-        "filename": "*Q4_K_M.gguf",
+        "repo_id": "VextLabsinc/pentest-7b",
+        "filename": "*.gguf",
     },
-    "qwen3-coder-7b": {
-        "repo_id": "bartowski/Qwen3-Coder-7B-Instruct-GGUF",
-        "filename": "*Q4_K_M.gguf",
+    # Note: "Qwen3-Coder-7B-Instruct" does not exist (Qwen3-Coder only
+    # ships as 30B-A3B/480B-A35B MoE models) -- this is the closest real
+    # equivalent, Qwen's official dense 7B coding model.
+    "qwen-coder-7b": {
+        "repo_id": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+        "filename": "*q4_k_m.gguf",
     },
+    # Multi-quant repo -- needs the specific suffix, not a bare "*.gguf".
     "codegemma-7b": {
         "repo_id": "bartowski/codegemma-7b-it-GGUF",
         "filename": "*Q4_K_M.gguf",
@@ -116,8 +126,25 @@ class GgufSecurityProvider(PromptedLLMProvider):
         # review_change() (both inherited from PromptedLLMProvider).
         llm = self._load_llm()
         response = llm.create_chat_completion(
-            messages=messages,
+            messages=_fold_system_into_user(messages),
             max_tokens=self.max_new_tokens,
             temperature=0,
         )
         return str(response["choices"][0]["message"]["content"])
+
+
+def _fold_system_into_user(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    # Some GGUF chat templates -- Gemma's in particular -- hard-reject a
+    # leading "system" role ("System role not supported"): the template
+    # itself raises before generation starts, regardless of what the
+    # message says. Folding the system text into the first user turn is
+    # semantically equivalent for our single-turn prompts and works
+    # whether or not the template supports a system role, so do it
+    # unconditionally rather than special-casing affected models.
+    if len(messages) >= 2 and messages[0]["role"] == "system" and messages[1]["role"] == "user":
+        merged = {
+            "role": "user",
+            "content": f"{messages[0]['content']}\n\n{messages[1]['content']}",
+        }
+        return [merged, *messages[2:]]
+    return messages

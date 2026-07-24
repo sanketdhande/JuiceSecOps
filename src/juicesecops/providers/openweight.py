@@ -22,8 +22,10 @@ MODEL_CHOICES: dict[str, str] = {
     # security examples.
     "pentest-7b": "VextLabsinc/pentest-7b",
     # General-purpose open-weight coding models, useful as a non-security
-    # baseline within the "open-weight" tier.
-    "qwen3-coder-7b": "Qwen/Qwen3-Coder-7B-Instruct",
+    # baseline within the "open-weight" tier. Note: "Qwen3-Coder-7B-Instruct"
+    # does not exist -- Qwen3-Coder only ships as 30B-A3B/480B-A35B MoE
+    # models -- so this is Qwen's official dense 7B coding model instead.
+    "qwen-coder-7b": "Qwen/Qwen2.5-Coder-7B-Instruct",
     "codegemma-7b": "google/codegemma-7b-it",
 }
 

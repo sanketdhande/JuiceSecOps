@@ -108,7 +108,7 @@ The heuristic provider stays available so the thesis pipeline can still be teste
 | `foundation-sec-8b-reasoning` (default) | `fdtn-ai/Foundation-Sec-8B-Reasoning` | Cisco Foundation AI, open-weight, reasoning-tuned specifically for cybersecurity tasks |
 | `foundation-sec-8b` | `fdtn-ai/Foundation-Sec-8B` | Same family, non-reasoning base model |
 | `pentest-7b` | `VextLabsinc/pentest-7b` | Qwen2.5-7B-Instruct fine-tuned on pentesting/offensive-security examples |
-| `qwen3-coder-7b` | `Qwen/Qwen3-Coder-7B-Instruct` | General-purpose open-weight coding model (non-security baseline) |
+| `qwen-coder-7b` | `Qwen/Qwen2.5-Coder-7B-Instruct` | General-purpose open-weight coding model (non-security baseline). Note: "Qwen3-Coder-7B-Instruct" does not exist -- Qwen3-Coder only ships as 30B-A3B/480B-A35B MoE models -- so this uses Qwen's official dense 7B coder instead |
 | `codegemma-7b` | `google/codegemma-7b-it` | General-purpose open-weight coding model (non-security baseline) |
 
 ```bash
@@ -159,7 +159,7 @@ You can run the same merge locally against any set of `report.json` files produc
 ```bash
 python -m juicesecops.compare_models_cli \
   --report foundation-sec-8b-reasoning=results/foundation-sec-8b-reasoning/report.json \
-  --report qwen3-coder-7b=results/qwen3-coder-7b/report.json \
+  --report qwen-coder-7b=results/qwen-coder-7b/report.json \
   --output results/comparison
 ```
 
