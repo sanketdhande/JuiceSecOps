@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# The real LLM provider: every call below goes through the Hugging Face
+# `transformers` text-generation pipeline against `self.model`
+# (default openai/gpt-oss-120b). Select it with --provider huggingface (see
+# cli.py's _provider()). No GitHub Actions workflow does this -- it only
+# runs locally via scripts/run_juice_shop_pipeline_hf.sh, because the model
+# is too large for a standard CI runner. CI uses HeuristicProvider instead
+# (providers/heuristic.py), which has the same review_change()/triage()
+# shape but is pure regex, no model call.
 import json
 import re
 import time
@@ -35,6 +43,8 @@ class HuggingFaceSecurityProvider:
         self._pipe = None
 
     def _load_pipe(self) -> Any:
+        # Lazily loads the model into memory/GPU on first use (not at
+        # construction time), and caches it for the rest of the run.
         if self._pipe is not None:
             return self._pipe
         from transformers import pipeline
@@ -48,6 +58,8 @@ class HuggingFaceSecurityProvider:
         return self._pipe
 
     def _generate(self, messages: list[dict[str, str]]) -> str:
+        # The actual model inference call, shared by triage() and
+        # review_change() below.
         pipe = self._load_pipe()
         outputs = pipe(
             messages,
@@ -63,6 +75,9 @@ class HuggingFaceSecurityProvider:
         return str(generated)
 
     def triage(self, finding: Finding, context: dict[str, str]) -> TriageDecision:
+        # Prompts the model to score one finding (block/review/accept +
+        # risk_score) as JSON, then parses that JSON back into a
+        # TriageDecision. Called once per finding by pipeline.py.
         start = time.perf_counter()
         messages = [
             {
@@ -111,6 +126,10 @@ class HuggingFaceSecurityProvider:
         )
 
     def review_change(self, change: CodeChange, context: dict[str, str]) -> list[Finding]:
+        # Prompts the model to find vulnerabilities in one changed file's
+        # diff, parses its JSON response into Finding objects tagged
+        # tool="llm-diff". Called once per file returned by
+        # diffing.collect_changes(), from pipeline.py's run_pipeline().
         messages = [
             {
                 "role": "system",

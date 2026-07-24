@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Entry point: `python -m juicesecops ...` (see __main__.py). Called from
+# .github/workflows/juice-shop-security-report.yml and the
+# scripts/run_juice_shop_pipeline*.sh scripts after the scanners
+# (Semgrep/Trivy/ZAP) have already produced their JSON reports on disk.
 import argparse
 from pathlib import Path
 
@@ -21,6 +25,11 @@ def _parse_context(values: list[str]) -> dict[str, str]:
 
 
 def _provider(name: str, model_id: str):
+    # This is the only place --provider heuristic|huggingface turns into an
+    # actual object. "huggingface" is the real openai/gpt-oss-120b model
+    # (providers/huggingface.py); anything else falls back to the regex
+    # heuristic (providers/heuristic.py). Every GitHub Actions workflow
+    # passes --provider heuristic (or omits it, since that's the default).
     if name == "huggingface":
         return HuggingFaceSecurityProvider(model=model_id)
     return HeuristicProvider()
@@ -99,6 +108,9 @@ def main(argv: list[str] | None = None) -> int:
 
     policy = Policy.load(args.policy)
     provider = _provider(args.provider, args.model_id)
+    # Everything downstream (loading scanner findings, diffing the target
+    # repo, calling the provider, gating) happens inside run_pipeline()
+    # (pipeline.py).
     report = run_pipeline(
         inputs=existing_inputs,
         provider=provider,

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Local equivalent of .github/workflows/juice-shop-security-report.yml:
+# clone Juice Shop -> Semgrep -> Trivy -> ZAP -> `python -m juicesecops`
+# (src/juicesecops/), which is where the LLM/heuristic diff-review + triage
+# stages run (see pipeline.py). PROVIDER selects heuristic (regex, default,
+# providers/heuristic.py) or huggingface (real openai/gpt-oss-120b call,
+# providers/huggingface.py) -- pass "huggingface" as the second argument to
+# use the real model here instead of running run_juice_shop_pipeline_hf.sh.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+# Deterministic stand-in for the real LLM provider (huggingface.py). No model
+# is called here -- review_change() below just regex-matches added diff
+# lines against _CHANGE_PATTERNS. It still tags its findings tool="llm-diff"
+# so the rest of the pipeline (report grouping, precision comparison) can't
+# tell it apart from a real model's output. This is what every GitHub
+# Actions workflow uses (--provider heuristic), because a 120B model won't
+# fit on a standard runner.
 import hashlib
 import re
 import time
@@ -164,6 +171,9 @@ class HeuristicProvider:
     model = "juice-shop-context-v1"
 
     def triage(self, finding: Finding, context: dict[str, str]) -> TriageDecision:
+        # Called once per finding (scanner findings AND this provider's own
+        # llm-diff findings) from pipeline.py. Scores risk with a fixed
+        # formula instead of asking a model.
         start = time.perf_counter()
         risk, exploitability = _risk(finding, context)
         if risk >= 70:
@@ -192,6 +202,10 @@ class HeuristicProvider:
         )
 
     def review_change(self, change: CodeChange, context: dict[str, str]) -> list[Finding]:
+        # Called once per file from collect_changes() (diffing.py), via
+        # pipeline.py's run_pipeline(). This is the "LLM finds a new
+        # vulnerability" stage: scan every added line of `change.diff`
+        # against _CHANGE_PATTERNS above and emit a Finding per match.
         del context
         findings: list[Finding] = []
         added_lines = _added_lines(change.diff)

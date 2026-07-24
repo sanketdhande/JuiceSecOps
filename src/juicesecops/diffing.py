@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Step 2 of the pipeline (see pipeline.py): turns a git diff of --target-repo
+# into the list of CodeChange objects that get handed to
+# provider.review_change() -- this is what feeds the LLM/heuristic
+# change-review stage. If this returns [], the LLM stage has nothing to look
+# at and produces zero "llm-diff" findings.
 import subprocess
 from pathlib import Path
 
@@ -44,9 +49,17 @@ def collect_changes(
     head_ref: str = "HEAD",
 ) -> list[CodeChange]:
     repo = Path(repo_path)
+    # base_ref=None means "diff the working tree against HEAD". A freshly
+    # cloned repo (as in CI) has no uncommitted edits, so that diff is always
+    # empty. The CI workflow / pipeline scripts instead pass base_ref = git's
+    # empty-tree object hash, which makes every tracked file show up as
+    # "added" -- i.e. a one-time baseline review of the whole checkout.
     diff_target = [head_ref, "--"] if base_ref is None else [base_ref, head_ref, "--"]
     name_status = _run_git(repo, ["diff", "--name-status", *diff_target])
 
+    # Rank every changed/added file by _match_priority before touching git
+    # again, then only diff the top max_changed_files -- keeps this cheap
+    # even when "everything" is in scope (empty-tree baseline scan).
     candidates: list[tuple[int, int, str, str]] = []
     for order, line in enumerate(name_status.splitlines()):
         if not line.strip():

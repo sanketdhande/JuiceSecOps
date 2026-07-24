@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Same flow as run_juice_shop_pipeline.sh, hardcoded to --provider
+# huggingface: the diff-review and triage stages in pipeline.py call the
+# real openai/gpt-oss-120b model (providers/huggingface.py) via
+# transformers, downloaded/run on this machine. Needs `pip install -e
+# '.[hf,dev]'` and enough GPU/CPU memory to host the model -- this never
+# runs in GitHub Actions.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
