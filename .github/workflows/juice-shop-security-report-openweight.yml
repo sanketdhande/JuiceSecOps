@@ -1,0 +1,234 @@
+# Multi-model open-weight LLM comparison. Manual-only (workflow_dispatch)
+# because it is by far the heaviest/slowest workflow in this repo: unlike
+# juice-shop-security-report.yml (which always uses --provider heuristic,
+# a regex stand-in with no model call), this one actually runs several
+# quantized open-weight LLMs -- see src/juicesecops/providers/gguf.py's
+# GGUF_MODEL_CHOICES -- via llama-cpp-python on CPU-only GitHub-hosted
+# runners.
+#
+# Shape:
+#   1. "scan" runs Semgrep/Trivy/ZAP once (same as the default report
+#      workflow) and uploads the three scanner JSON reports as an artifact,
+#      so they aren't re-run once per model.
+#   2. "prepare-matrix" reads GGUF_MODEL_CHOICES directly from the Python
+#      package so the workflow matrix can never drift out of sync with the
+#      code's model list.
+#   3. "llm-review" is a matrix job, one leg per model alias. Each leg
+#      downloads the scanner reports from step 1, re-clones Juice Shop
+#      (cheap, shallow), and runs `python -m juicesecops --provider gguf
+#      --model-id <alias>`. continue-on-error is set on the job because
+#      GGUF_MODEL_CHOICES is a best-effort mapping (see gguf.py) -- a
+#      renamed/missing quantization for one model must not fail the whole
+#      run, it should just be absent from the combined report.
+#   4. "combine" downloads whichever per-model reports actually succeeded
+#      and merges them with `juicesecops-compare-models`
+#      (src/juicesecops/compare_models_cli.py) into one comparison.md/
+#      comparison.json with every model's findings side by side.
+
+name: juice-shop-security-report-openweight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.models.outputs.models }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read GGUF_MODEL_CHOICES from the package
+        id: models
+        run: |
+          MODELS=$(PYTHONPATH=src python3 -c "
+          import json
+          from juicesecops.providers.gguf import GGUF_MODEL_CHOICES
+          print(json.dumps(sorted(GGUF_MODEL_CHOICES)))
+          ")
+          echo "models=${MODELS}" >> "$GITHUB_OUTPUT"
+          echo "Matrix models: ${MODELS}"
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: python -m pip install --upgrade pip && python -m pip install semgrep
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p results/openweight/scan
+          chmod 777 results/openweight/scan
+
+      - name: Clone Juice Shop target
+        run: ./scripts/fetch_juice_shop.sh
+
+      - name: Run Semgrep
+        run: semgrep --config p/owasp-top-ten --json --output results/openweight/scan/semgrep.json targets/juice-shop
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: targets/juice-shop
+          format: json
+          output: results/openweight/scan/trivy.json
+          scanners: vuln,secret
+          exit-code: 0
+
+      - name: Start Juice Shop
+        run: |
+          docker network create juice-shop-net || true
+          docker run -d --name thesis-juice-shop --network juice-shop-net -p 3000:3000 bkimminich/juice-shop
+
+      - name: Run ZAP baseline
+        run: |
+          chmod 777 results/openweight/scan
+          docker run --rm \
+            --network juice-shop-net \
+            -v "$PWD/results/openweight/scan:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://thesis-juice-shop:3000 -J zap.json 2>&1 | tee results/openweight/scan/zap-baseline.log || true
+
+      - name: Upload scan inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-openweight-scan-inputs
+          path: results/openweight/scan
+          if-no-files-found: warn
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f thesis-juice-shop || true
+          docker network rm juice-shop-net || true
+
+  llm-review:
+    needs: [prepare-matrix, scan]
+    runs-on: ubuntu-latest
+    # A missing/renamed GGUF quantization for one model (see the
+    # best-effort-mapping note in providers/gguf.py) must not fail the
+    # whole workflow -- the "combine" job below just skips whatever legs
+    # didn't produce a report.json.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJson(needs.prepare-matrix.outputs.models) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project with the gguf extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[gguf,dev]'
+
+      - name: Download scan inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: juice-shop-openweight-scan-inputs
+          path: results/openweight/scan
+
+      - name: Clone Juice Shop target
+        run: ./scripts/fetch_juice_shop.sh
+
+      - name: Run juicesecops with --provider gguf --model-id ${{ matrix.model }}
+        run: |
+          mkdir -p "results/openweight/${{ matrix.model }}"
+          # targets/juice-shop is a fresh clone with no working-tree edits, so
+          # a plain `git diff HEAD` is always empty. Diff against git's
+          # well-known empty-tree object instead, so every in-scope file is
+          # treated as "added" and reviewed as a one-time baseline scan.
+          EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+          python -m juicesecops \
+            --input results/openweight/scan/semgrep.json \
+            --input results/openweight/scan/trivy.json \
+            --input results/openweight/scan/zap.json \
+            --provider gguf \
+            --model-id "${{ matrix.model }}" \
+            --target-repo targets/juice-shop \
+            --base-ref "$EMPTY_TREE" \
+            --head-ref HEAD \
+            --output "results/openweight/${{ matrix.model }}" \
+            --no-fail
+
+      - name: Upload model report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-openweight-report-${{ matrix.model }}
+          path: results/openweight/${{ matrix.model }}
+          if-no-files-found: ignore
+
+  combine:
+    needs: [prepare-matrix, llm-review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      - name: Download every per-model report that succeeded
+        uses: actions/download-artifact@v4
+        with:
+          pattern: juice-shop-openweight-report-*
+          path: results/openweight/reports
+          merge-multiple: false
+
+      - name: Merge into one comparison report
+        run: |
+          REPORT_ARGS=()
+          for dir in results/openweight/reports/*/; do
+            name="$(basename "$dir")"
+            model="${name#juice-shop-openweight-report-}"
+            if [ -f "${dir}report.json" ]; then
+              REPORT_ARGS+=(--report "${model}=${dir}report.json")
+            else
+              echo "Skipping ${model}: no report.json (model run likely failed)"
+            fi
+          done
+          if [ "${#REPORT_ARGS[@]}" -eq 0 ]; then
+            echo "No model reports available to merge -- every matrix leg failed."
+            exit 1
+          fi
+          python -m juicesecops.compare_models_cli "${REPORT_ARGS[@]}" --output results/openweight/comparison
+          echo "Merged models: ${REPORT_ARGS[*]}"
+
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: juice-shop-openweight-comparison
+          path: results/openweight/comparison
+          if-no-files-found: warn

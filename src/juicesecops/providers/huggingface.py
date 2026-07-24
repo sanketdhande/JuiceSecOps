@@ -8,33 +8,16 @@ from __future__ import annotations
 # is too large for a standard CI runner. CI uses HeuristicProvider instead
 # (providers/heuristic.py), which has the same review_change()/triage()
 # shape but is pure regex, no model call.
-import json
-import re
-import time
-from dataclasses import asdict
+#
+# triage()/review_change() themselves (prompts, JSON parsing) live in
+# _prompted.py's PromptedLLMProvider so the smaller GgufSecurityProvider
+# (gguf.py) asks the model the same questions and stays directly comparable.
 from typing import Any
 
-from ..models import CodeChange, Finding, TriageDecision
-from ..parsers import finding_from_mapping
+from ._prompted import PromptedLLMProvider
 
 
-def _extract_json(text: str) -> Any:
-    fenced = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    candidates = fenced or [text]
-    for candidate in candidates:
-        candidate = candidate.strip()
-        for start_char, end_char in (("{", "}"), ("[", "]")):
-            start = candidate.find(start_char)
-            end = candidate.rfind(end_char)
-            if start != -1 and end != -1 and end > start:
-                try:
-                    return json.loads(candidate[start : end + 1])
-                except json.JSONDecodeError:
-                    continue
-    raise ValueError("Model output did not contain valid JSON")
-
-
-class HuggingFaceSecurityProvider:
+class HuggingFaceSecurityProvider(PromptedLLMProvider):
     name = "huggingface"
 
     def __init__(self, model: str = "openai/gpt-oss-120b", max_new_tokens: int = 768) -> None:
@@ -59,7 +42,7 @@ class HuggingFaceSecurityProvider:
 
     def _generate(self, messages: list[dict[str, str]]) -> str:
         # The actual model inference call, shared by triage() and
-        # review_change() below.
+        # review_change() (both inherited from PromptedLLMProvider).
         pipe = self._load_pipe()
         outputs = pipe(
             messages,
@@ -73,113 +56,3 @@ class HuggingFaceSecurityProvider:
                 return str(last.get("content", ""))
             return str(last)
         return str(generated)
-
-    def triage(self, finding: Finding, context: dict[str, str]) -> TriageDecision:
-        # Prompts the model to score one finding (block/review/accept +
-        # risk_score) as JSON, then parses that JSON back into a
-        # TriageDecision. Called once per finding by pipeline.py.
-        start = time.perf_counter()
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a DevSecOps security triage model. Return JSON only. "
-                    "Assess one finding in a CI/CD pipeline for OWASP Juice Shop."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "task": "triage_finding",
-                        "finding": finding.to_dict(),
-                        "context": context,
-                        "schema": {
-                            "disposition": "block|review|accept",
-                            "risk_score": "integer 0..100",
-                            "true_positive_likelihood": "float 0..1",
-                            "exploitability": "confirmed|likely|possible|unlikely|unknown",
-                            "summary": "short string",
-                            "rationale": "short string",
-                            "remediation": "short string",
-                        },
-                    },
-                    indent=2,
-                ),
-            },
-        ]
-        payload = _extract_json(self._generate(messages))
-        return TriageDecision(
-            finding_fingerprint=finding.fingerprint,
-            disposition=str(payload.get("disposition", "review")),
-            risk_score=int(payload.get("risk_score", 50)),
-            true_positive_likelihood=float(
-                payload.get("true_positive_likelihood", finding.confidence)
-            ),
-            exploitability=str(payload.get("exploitability", "unknown")),
-            summary=str(payload.get("summary", "LLM security triage")),
-            rationale=str(payload.get("rationale", "No rationale provided.")),
-            remediation=str(payload.get("remediation", finding.remediation)),
-            provider=self.name,
-            model=self.model,
-            latency_ms=round((time.perf_counter() - start) * 1000, 3),
-        )
-
-    def review_change(self, change: CodeChange, context: dict[str, str]) -> list[Finding]:
-        # Prompts the model to find vulnerabilities in one changed file's
-        # diff, parses its JSON response into Finding objects tagged
-        # tool="llm-diff". Called once per file returned by
-        # diffing.collect_changes(), from pipeline.py's run_pipeline().
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a secure code reviewer for OWASP Juice Shop. "
-                    "Inspect only the provided code change. "
-                    "Return JSON only."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "task": "review_code_change",
-                        "change": asdict(change),
-                        "context": context,
-                        "schema": {
-                            "findings": [
-                                {
-                                    "tool": "llm-diff",
-                                    "rule_id": "string",
-                                    "title": "string",
-                                    "description": "string",
-                                    "severity": "critical|high|medium|low|info",
-                                    "category": "code|secret|dependency|dynamic",
-                                    "confidence": "float 0..1",
-                                    "location": {
-                                        "path": "string",
-                                        "line": "integer|null",
-                                        "url": "",
-                                    },
-                                    "cwe": ["string"],
-                                    "references": ["string"],
-                                    "remediation": "string",
-                                    "evidence": "string",
-                                    "metadata": {"source": "diff-review"},
-                                }
-                            ]
-                        },
-                    },
-                    indent=2,
-                ),
-            },
-        ]
-        payload = _extract_json(self._generate(messages))
-        findings: list[Finding] = []
-        for item in payload.get("findings", []):
-            mapping = dict(item)
-            mapping.setdefault("tool", "llm-diff")
-            mapping.setdefault("metadata", {})
-            mapping["metadata"]["source"] = "diff-review"
-            findings.append(finding_from_mapping(mapping))
-        return findings

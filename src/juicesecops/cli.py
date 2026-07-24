@@ -11,7 +11,16 @@ from .evaluation import evaluate_precision, summarize_findings
 from .parsers import load_findings
 from .pipeline import run_pipeline
 from .policy import Policy
-from .providers import HeuristicProvider, HuggingFaceSecurityProvider
+from .providers import (
+    GGUF_MODEL_CHOICES,
+    OPENWEIGHT_MODEL_CHOICES,
+    GgufSecurityProvider,
+    HeuristicProvider,
+    HuggingFaceSecurityProvider,
+    OpenWeightSecurityProvider,
+)
+from .providers.gguf import DEFAULT_MODEL_ALIAS as GGUF_DEFAULT_MODEL
+from .providers.openweight import DEFAULT_MODEL_ALIAS as OPENWEIGHT_DEFAULT_MODEL
 from .reporting import print_report_summary, write_report
 
 
@@ -24,14 +33,25 @@ def _parse_context(values: list[str]) -> dict[str, str]:
     return context
 
 
-def _provider(name: str, model_id: str):
-    # This is the only place --provider heuristic|huggingface turns into an
-    # actual object. "huggingface" is the real openai/gpt-oss-120b model
-    # (providers/huggingface.py); anything else falls back to the regex
-    # heuristic (providers/heuristic.py). Every GitHub Actions workflow
-    # passes --provider heuristic (or omits it, since that's the default).
+def _provider(name: str, model_id: str | None):
+    # This is the only place --provider
+    # heuristic|huggingface|openweight|gguf turns into an actual object.
+    # "huggingface" is the real openai/gpt-oss-120b model
+    # (providers/huggingface.py); "openweight" is the same transformers-
+    # based call but defaults to a much smaller curated open-weight
+    # security model (providers/openweight.py) -- both need a GPU host.
+    # "gguf" runs a quantized build of those same small models via
+    # llama.cpp so it can realistically finish on a CPU-only GitHub Actions
+    # runner (providers/gguf.py). Anything else falls back to the regex
+    # heuristic (providers/heuristic.py). Every default GitHub Actions
+    # workflow passes --provider heuristic (or omits it, since that's the
+    # default); the multi-model comparison workflow passes --provider gguf.
     if name == "huggingface":
-        return HuggingFaceSecurityProvider(model=model_id)
+        return HuggingFaceSecurityProvider(model=model_id or "openai/gpt-oss-120b")
+    if name == "openweight":
+        return OpenWeightSecurityProvider(model=model_id or OPENWEIGHT_DEFAULT_MODEL)
+    if name == "gguf":
+        return GgufSecurityProvider(model=model_id or GGUF_DEFAULT_MODEL)
     return HeuristicProvider()
 
 
@@ -68,14 +88,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["heuristic", "huggingface"],
+        choices=["heuristic", "huggingface", "openweight", "gguf"],
         default="heuristic",
         help="Security analysis provider.",
     )
+    openweight_aliases = ", ".join(sorted(OPENWEIGHT_MODEL_CHOICES))
+    gguf_aliases = ", ".join(sorted(GGUF_MODEL_CHOICES))
     parser.add_argument(
         "--model-id",
-        default="openai/gpt-oss-120b",
-        help="Transformers model id for the Hugging Face provider.",
+        default=None,
+        help=(
+            "Model id. Defaults to openai/gpt-oss-120b for --provider "
+            f"huggingface, {OPENWEIGHT_DEFAULT_MODEL} for --provider "
+            f"openweight, or {GGUF_DEFAULT_MODEL} for --provider gguf. "
+            f"For --provider openweight, a short alias ({openweight_aliases}) "
+            "or any other Hugging Face repo id is accepted. For --provider "
+            f"gguf, a short alias ({gguf_aliases}) or an explicit "
+            '"repo_id:filename-glob" string is accepted.'
+        ),
     )
     parser.add_argument("--base-ref", help="Base git ref for diff-based analysis.")
     parser.add_argument("--head-ref", default="HEAD", help="Head git ref for diff-based analysis.")

@@ -68,7 +68,8 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 - `samples/reports/`: synthetic Semgrep, Trivy, and ZAP reports for offline demonstration.
 - `scripts/run_demo.sh`: quick local demo without heavyweight external scanners.
 - `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with configurable provider/model.
-- `scripts/run_juice_shop_pipeline_hf.sh`: full pipeline example using the Hugging Face LLM provider.
+- `scripts/run_juice_shop_pipeline_hf.sh`: full pipeline example using the Hugging Face LLM provider (`openai/gpt-oss-120b`).
+- `scripts/run_juice_shop_pipeline_openweight.sh`: full pipeline example using a small, free open-weight security model (default `Foundation-Sec-8B-Reasoning`).
 - `.github/workflows/`: split CI workflows for linting, reporting, Semgrep, Trivy, and ZAP stages.
 
 ## Hugging Face model integration
@@ -95,6 +96,72 @@ The implementation lives in `src/juicesecops/providers/huggingface.py`. It uses 
 2. Triage normalized scanner findings into `block`, `review`, or `accept` decisions.
 
 The heuristic provider stays available so the thesis pipeline can still be tested on machines without enough GPU memory for a 120B model.
+
+## Open-weight model provider
+
+`src/juicesecops/providers/openweight.py` (`--provider openweight`) reuses `HuggingFaceSecurityProvider`'s prompts and `transformers` call, but defaults to a small, free, open-weight security model instead of `openai/gpt-oss-120b`. This gives a middle ground between the zero-model heuristic baseline and the 120B model: a real LLM that can plausibly run on a single GPU (or a quantized CPU build) rather than requiring server-class hardware.
+
+`--model-id` accepts either a short alias or any Hugging Face repo id:
+
+| Alias | Hugging Face repo | Notes |
+| --- | --- | --- |
+| `foundation-sec-8b-reasoning` (default) | `fdtn-ai/Foundation-Sec-8B-Reasoning` | Cisco Foundation AI, open-weight, reasoning-tuned specifically for cybersecurity tasks |
+| `foundation-sec-8b` | `fdtn-ai/Foundation-Sec-8B` | Same family, non-reasoning base model |
+| `pentest-7b` | `VextLabsinc/pentest-7b` | Qwen2.5-7B-Instruct fine-tuned on pentesting/offensive-security examples |
+| `qwen3-coder-7b` | `Qwen/Qwen3-Coder-7B-Instruct` | General-purpose open-weight coding model (non-security baseline) |
+| `codegemma-7b` | `google/codegemma-7b-it` | General-purpose open-weight coding model (non-security baseline) |
+
+```bash
+python -m pip install -e '.[hf,dev]'
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider openweight \
+  --model-id foundation-sec-8b-reasoning \
+  --output results/openweight
+```
+
+Or use the bundled script, which also runs Semgrep/Trivy/ZAP first:
+
+```bash
+./scripts/run_juice_shop_pipeline_openweight.sh targets/juice-shop pentest-7b
+```
+
+This still needs `pip install -e '.[hf,dev]'` and enough local GPU/CPU memory to host an ~7-8B model, so like the `huggingface` provider it does not run in GitHub Actions -- CI stays on `--provider heuristic`.
+
+## Quantized (GGUF) provider and the multi-model CI workflow
+
+`src/juicesecops/providers/gguf.py` (`--provider gguf`) runs a quantized GGUF build of the same small open-weight models via `llama-cpp-python` (CPU-only, via `llama.cpp`) instead of full-precision `transformers`. This is the provider that can actually complete on a standard GitHub-hosted runner, which has no GPU.
+
+`--model-id` accepts a short alias from `GGUF_MODEL_CHOICES` (same models as the `openweight` provider table above) or an explicit `"repo_id:filename-glob"` string:
+
+```bash
+python -m pip install -e '.[gguf,dev]'
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider gguf \
+  --model-id foundation-sec-8b-reasoning \
+  --output results/gguf
+```
+
+**`GGUF_MODEL_CHOICES` is a best-effort mapping.** Community GGUF quantizations churn, and niche security fine-tunes in particular may not have one at all. Verify an alias's `repo_id`/`filename` on huggingface.co before relying on it, or bypass the table with an explicit `--model-id "org/repo:*Q4_K_M.gguf"`.
+
+### `.github/workflows/juice-shop-security-report-openweight.yml`
+
+A manual-only (`workflow_dispatch`) workflow that runs **every** model in `GGUF_MODEL_CHOICES` in CI and merges the results into one comparison report:
+
+1. `scan` runs Semgrep/Trivy/ZAP once and uploads the JSON reports as an artifact.
+2. `prepare-matrix` reads `GGUF_MODEL_CHOICES` straight from the Python package, so the matrix can't drift out of sync with the code.
+3. `llm-review` is a matrix job, one leg per model, each running `--provider gguf --model-id <alias>` against the shared scanner reports. `continue-on-error` is set at the job level: a renamed/missing GGUF quantization for one model does not fail the whole workflow, it's just absent from the final comparison.
+4. `combine` downloads whichever per-model reports succeeded and runs the new `juicesecops-compare-models` CLI (`src/juicesecops/compare_models_cli.py`) to merge them into `comparison.md` / `comparison.json`, with the shared traditional (scanner) findings listed once and each model's LLM findings, severities, dispositions, and gate result listed side by side.
+
+You can run the same merge locally against any set of `report.json` files produced with different `--provider`/`--model-id` combinations:
+
+```bash
+python -m juicesecops.compare_models_cli \
+  --report foundation-sec-8b-reasoning=results/foundation-sec-8b-reasoning/report.json \
+  --report qwen3-coder-7b=results/qwen3-coder-7b/report.json \
+  --output results/comparison
+```
 
 ## LLM and scanner comparison
 

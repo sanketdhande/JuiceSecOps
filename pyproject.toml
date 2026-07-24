@@ -17,6 +17,10 @@ hf = [
   "torch>=2.2,<3",
   "transformers>=4.55,<5",
 ]
+gguf = [
+  "llama-cpp-python>=0.3,<1",
+  "huggingface_hub>=0.25,<1",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.9,<1",
@@ -24,6 +28,7 @@ dev = [
 
 [project.scripts]
 juicesecops = "juicesecops.cli:main"
+juicesecops-compare-models = "juicesecops.compare_models_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
