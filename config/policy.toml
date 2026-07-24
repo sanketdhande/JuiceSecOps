@@ -13,16 +13,18 @@ max_diff_chars = 7000
 max_snippet_chars = 2500
 
 [changes]
-max_changed_files = 20
-include_extensions = [".ts", ".js", ".html", ".json", ".yml", ".yaml", ".md"]
+# max_changed_files is spent in include_paths order, so raise it in step with
+# that list if new high-value directories are added.
+max_changed_files = 150
+include_extensions = [".ts", ".js", ".html", ".json", ".yml", ".yaml"]
 include_paths = [
-  "app.ts",
   "server.ts",
-  "Dockerfile",
-  "package.json",
-  "config/",
+  "app.ts",
   "lib/",
   "models/",
   "routes/",
+  "Dockerfile",
+  "package.json",
+  "config/",
   "frontend/src/",
 ]

@@ -18,11 +18,23 @@ def _run_git(repo_path: Path, args: list[str]) -> str:
     return result.stdout
 
 
-def _is_relevant(path: str, policy: Policy) -> bool:
+def _match_priority(path: str, policy: Policy) -> int | None:
+    """Rank a path by how it matched policy scope.
+
+    Explicit ``include_paths`` entries are ranked ahead of generic
+    ``include_extensions`` matches, in the order they are declared, so that a
+    file budget (``max_changed_files``) is spent on the security-relevant
+    directories operators called out by name (e.g. ``routes/``, ``lib/``)
+    before it is spent on incidental matches like stray ``.md`` files that
+    happen to share an allowed extension.
+    """
+    for index, prefix in enumerate(policy.include_paths):
+        if path == prefix or path.startswith(prefix):
+            return index
     suffix = Path(path).suffix
     if suffix and suffix in policy.include_extensions:
-        return True
-    return any(path == prefix or path.startswith(prefix) for prefix in policy.include_paths)
+        return len(policy.include_paths)
+    return None
 
 
 def collect_changes(
@@ -34,16 +46,23 @@ def collect_changes(
     repo = Path(repo_path)
     diff_target = [head_ref, "--"] if base_ref is None else [base_ref, head_ref, "--"]
     name_status = _run_git(repo, ["diff", "--name-status", *diff_target])
-    changes: list[CodeChange] = []
-    for line in name_status.splitlines():
+
+    candidates: list[tuple[int, int, str, str]] = []
+    for order, line in enumerate(name_status.splitlines()):
         if not line.strip():
             continue
         parts = line.split("\t", maxsplit=1)
         if len(parts) != 2:
             continue
         status, path = parts
-        if not _is_relevant(path, policy):
+        priority = _match_priority(path, policy)
+        if priority is None:
             continue
+        candidates.append((priority, order, status, path))
+    candidates.sort(key=lambda item: (item[0], item[1]))
+
+    changes: list[CodeChange] = []
+    for _priority, _order, status, path in candidates[: policy.max_changed_files]:
         diff_args = ["diff", "--unified=3", *diff_target, "--", path]
         diff = _run_git(repo, diff_args).strip()
         if not diff:
@@ -65,6 +84,4 @@ def collect_changes(
                 snippet=snippet[: policy.max_snippet_chars],
             )
         )
-        if len(changes) >= policy.max_changed_files:
-            break
     return changes

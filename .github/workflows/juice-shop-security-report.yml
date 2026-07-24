@@ -70,12 +70,20 @@ jobs:
             echo "ZAP report missing, continuing without ZAP input"
             ZAP_INPUT=""
           fi
+          # targets/juice-shop is a fresh --depth 1 clone with no working-tree
+          # edits, so a plain `git diff HEAD` is always empty and the LLM
+          # change-review stage never runs. Diff against git's well-known
+          # empty-tree object instead, so every in-scope file is treated as
+          # "added" and reviewed as a one-time baseline scan of the checkout.
+          EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
           python -m juicesecops \
             --input results/ci/semgrep.json \
             --input results/ci/trivy.json \
             $ZAP_INPUT \
             --provider heuristic \
             --target-repo targets/juice-shop \
+            --base-ref "$EMPTY_TREE" \
+            --head-ref HEAD \
             --output results/ci \
             --no-fail
           echo "Juice Shop report workflow completed. Gate status is recorded in results/ci/report.json and results/ci/report.md."

@@ -49,6 +49,12 @@ else
   echo "ZAP report not found, skipping ZAP input"
 fi
 
+# TARGET_REPO is a fresh clone with no working-tree edits, so a plain
+# `git diff HEAD` is always empty and the LLM change-review stage never
+# runs. Diff against git's well-known empty-tree object instead, so every
+# in-scope file is treated as "added" and reviewed as a baseline scan.
+EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+
 PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --input "${OUTPUT_DIR}/semgrep.json" \
   --input "${OUTPUT_DIR}/trivy.json" \
@@ -56,4 +62,6 @@ PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --provider "${PROVIDER}" \
   --model-id "${MODEL_ID}" \
   --target-repo "${TARGET_REPO}" \
+  --base-ref "${EMPTY_TREE}" \
+  --head-ref HEAD \
   --output "${OUTPUT_DIR}"

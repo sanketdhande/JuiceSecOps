@@ -177,7 +177,7 @@ Or use the generic pipeline script with a selected provider and model:
 ./scripts/run_juice_shop_pipeline.sh targets/juice-shop huggingface openai/gpt-oss-120b
 ```
 
-If you want the LLM to inspect actual code changes, edit files inside `targets/juice-shop/` first or pass `--base-ref` and `--head-ref` from a real branch comparison.
+`targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and both `run_juice_shop_pipeline*.sh` scripts pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 
 ## CI/CD behavior
 

@@ -19,20 +19,20 @@ class Policy:
     max_evidence_chars: int = 500
     max_diff_chars: int = 7000
     max_snippet_chars: int = 2500
-    max_changed_files: int = 20
+    max_changed_files: int = 150
     include_extensions: list[str] = field(
-        default_factory=lambda: [".ts", ".js", ".html", ".json", ".yml", ".yaml", ".md"]
+        default_factory=lambda: [".ts", ".js", ".html", ".json", ".yml", ".yaml"]
     )
     include_paths: list[str] = field(
         default_factory=lambda: [
-            "app.ts",
             "server.ts",
-            "Dockerfile",
-            "package.json",
-            "config/",
+            "app.ts",
             "lib/",
             "models/",
             "routes/",
+            "Dockerfile",
+            "package.json",
+            "config/",
             "frontend/src/",
         ]
     )

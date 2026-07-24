@@ -99,7 +99,10 @@ _CHANGE_PATTERNS = [
         "confidence": 0.82,
     },
     {
-        "regex": r"(secret|password|token|jwt).{0,15}[:=].{0,5}[\"'][^\"']{1,16}[\"']",
+        "regex": (
+            r"(secret|password|token|jwt).{0,15}[:=].{0,5}[\"']"
+            r"(?!\^?~?\d+(?:\.\d+){1,3}[\"'])[^\"']{1,16}[\"']"
+        ),
         "rule_id": "llm.hardcoded.secret",
         "title": "Potential hardcoded or weak secret",
         "severity": "high",
