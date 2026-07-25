@@ -133,14 +133,16 @@ This still needs `pip install -e '.[hf,dev]'` and enough local GPU/CPU memory to
 
 `src/juicesecops/providers/gguf.py` (`--provider gguf`) runs a quantized GGUF build of the same small open-weight models via `llama-cpp-python` (CPU-only, via `llama.cpp`) instead of full-precision `transformers`. This is the provider that can actually complete on a standard GitHub-hosted runner, which has no GPU.
 
-`--model-id` accepts a short alias from `GGUF_MODEL_CHOICES` (`foundation-sec-8b-reasoning`, `foundation-sec-8b`, `qwen-coder-7b`, `codegemma-7b` -- a subset of the `openweight` provider table above; `pentest-7b` is excluded here because `VextLabsinc/pentest-7b` has no `.gguf` file on huggingface.co, confirmed via the HF API's `siblings` list) or an explicit `"repo_id:filename-glob"` string:
+**`GGUF_MODEL_CHOICES` is currently empty.** All four prior aliases (`foundation-sec-8b-reasoning`, `foundation-sec-8b`, `qwen-coder-7b`, `codegemma-7b`) were removed on 2026-07-25 after verifying via the GitHub Actions API that every one of them hit the `llm-review` job's `timeout-minutes: 120` ceiling and got cancelled -- with no exceptions -- in the most recent run of both `juice-shop-security-report-openweight.yml` and `dvwa-security-report-openweight.yml`. Neither workflow's `combine` step had a single `report.json` to merge. That's a capacity/timeout problem (CPU inference for a 7-8B model over `policy-openweight.toml`'s 20-file cap doesn't fit in 120 minutes on a standard GitHub-hosted runner), not evidence those specific `repo_id`/`filename` entries were wrong.
+
+`--model-id` therefore requires an explicit `"repo_id:filename-glob"` string until a working alias is re-added:
 
 ```bash
 python -m pip install -e '.[gguf,dev]'
 python -m juicesecops \
   --input samples/reports/semgrep.json \
   --provider gguf \
-  --model-id foundation-sec-8b-reasoning \
+  --model-id "fdtn-ai/Foundation-Sec-8B-Reasoning-Q8_0-GGUF:*.gguf" \
   --output results/gguf
 ```
 
@@ -148,7 +150,7 @@ python -m juicesecops \
 
 ### `.github/workflows/juice-shop-security-report-openweight.yml`
 
-A manual-only (`workflow_dispatch`) workflow that runs **every** model in `GGUF_MODEL_CHOICES` in CI and merges the results into one comparison report:
+A manual-only (`workflow_dispatch`) workflow that runs **every** model in `GGUF_MODEL_CHOICES` in CI and merges the results into one comparison report. **With the table currently empty, `prepare-matrix` produces an empty matrix, so `llm-review` has no legs to run and `combine` fails fast with "No model reports available to merge" instead of waiting out the timeout** -- add at least one working alias back to `GGUF_MODEL_CHOICES` before relying on this workflow again:
 
 1. `scan` runs Semgrep/Trivy/ZAP once and uploads the JSON reports as an artifact.
 2. `prepare-matrix` reads `GGUF_MODEL_CHOICES` straight from the Python package, so the matrix can't drift out of sync with the code.
@@ -163,6 +165,31 @@ python -m juicesecops.compare_models_cli \
   --report qwen-coder-7b=results/qwen-coder-7b/report.json \
   --output results/comparison
 ```
+
+## OpenRouter provider (hosted API, no local weights)
+
+`src/juicesecops/providers/openrouter.py` (`--provider openrouter`) calls [OpenRouter](https://openrouter.ai)'s hosted, OpenAI-compatible chat-completions API instead of loading any model weights locally. No GPU, no download, no `[hf]`/`[gguf]` extras -- just an HTTPS call -- at the cost of depending on OpenRouter's uptime and an API key.
+
+Requires `OPENROUTER_API_KEY` in the environment (never pass it as `--model-id` or any other CLI argument -- argv ends up in shell history and CI logs):
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider openrouter \
+  --model-id gpt-oss-20b-free \
+  --output results/openrouter
+```
+
+`--model-id` accepts a short alias from `OPENROUTER_MODEL_CHOICES` or any other OpenRouter model id directly (paid models work too, if the key has credit). The alias table is restricted to models that were on OpenRouter's free tier (`:free` suffix, $0 price) when checked against the live `/api/v1/models` response on 2026-07-25:
+
+| Alias | OpenRouter model id |
+| --- | --- |
+| `gpt-oss-20b-free` (default) | `openai/gpt-oss-20b:free` |
+| `gemma-4-31b-free` | `google/gemma-4-31b-it:free` |
+| `nemotron-nano-30b-free` | `nvidia/nemotron-3-nano-30b-a3b:free` |
+
+**No `meta-llama` model was on OpenRouter's free tier as of that check** -- every Llama entry (`llama-3.1-8b-instruct`, `llama-3.3-70b-instruct`, etc.) was paid, though inexpensive (from ~$0.00000003/token). Free-tier availability rotates over time; re-check `https://openrouter.ai/api/v1/models` before relying on this table, and pass an explicit `--model-id "meta-llama/..."` (paid) if you want Llama specifically and have credit on the key.
 
 ## DVWA target
 

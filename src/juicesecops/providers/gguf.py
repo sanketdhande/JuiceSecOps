@@ -33,31 +33,28 @@ from ._prompted import PromptedLLMProvider
 # `siblings` list, not just a guess -- so Llama.from_pretrained() can never
 # find a match and every call fails instantly. If a real GGUF quant of it
 # shows up later, add it back with a repo_id that actually hosts a .gguf.
-GGUF_MODEL_CHOICES: dict[str, dict[str, str]] = {
-    # Single-file repos (GGUF-my-repo style) -- "*.gguf" is unambiguous
-    # since each repo holds exactly one quantized file.
-    "foundation-sec-8b-reasoning": {
-        "repo_id": "fdtn-ai/Foundation-Sec-8B-Reasoning-Q8_0-GGUF",
-        "filename": "*.gguf",
-    },
-    "foundation-sec-8b": {
-        "repo_id": "fdtn-ai/Foundation-Sec-8B-Q4_K_M-GGUF",
-        "filename": "*.gguf",
-    },
-    # Note: "Qwen3-Coder-7B-Instruct" does not exist (Qwen3-Coder only
-    # ships as 30B-A3B/480B-A35B MoE models) -- this is the closest real
-    # equivalent, Qwen's official dense 7B coding model.
-    "qwen-coder-7b": {
-        "repo_id": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-        "filename": "*q4_k_m.gguf",
-    },
-    # Multi-quant repo -- needs the specific suffix, not a bare "*.gguf".
-    "codegemma-7b": {
-        "repo_id": "bartowski/codegemma-7b-it-GGUF",
-        "filename": "*Q4_K_M.gguf",
-    },
-}
+#
+# "foundation-sec-8b-reasoning", "foundation-sec-8b", "qwen-coder-7b", and
+# "codegemma-7b" were all removed on 2026-07-25: verified via the GitHub
+# Actions API (unauthenticated, since this repo is public) that every one
+# of them hit the llm-review job's timeout-minutes: 120 ceiling and got
+# cancelled -- with no exceptions -- in both the most recent
+# juice-shop-security-report-openweight.yml run (30128947579) and the most
+# recent dvwa-security-report-openweight.yml run (30129023490), so neither
+# workflow's "combine" step had any report.json to merge. This is a
+# capacity/timeout problem (CPU inference for a 7-8B model over
+# policy-openweight.toml's 20-file cap doesn't fit in 120 minutes on a
+# standard GitHub-hosted runner), not evidence that these specific repo_id/
+# filename entries are wrong. Re-add an alias here once the underlying
+# timeout/file-cap/quantization tradeoff is revisited -- until then this
+# table is intentionally empty and --provider gguf requires an explicit
+# --model-id "repo_id:filename-glob" string.
+GGUF_MODEL_CHOICES: dict[str, dict[str, str]] = {}
 
+# Dangling on purpose while GGUF_MODEL_CHOICES is empty: _resolve() below
+# raises a clear ValueError for any name not in the table and without a
+# ":" in it, so --provider gguf with no --model-id fails fast and
+# explicitly instead of picking a model known to time out in CI.
 DEFAULT_MODEL_ALIAS = "foundation-sec-8b-reasoning"
 
 

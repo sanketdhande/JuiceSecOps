@@ -13,13 +13,16 @@ from .pipeline import run_pipeline
 from .policy import Policy
 from .providers import (
     GGUF_MODEL_CHOICES,
+    OPENROUTER_MODEL_CHOICES,
     OPENWEIGHT_MODEL_CHOICES,
     GgufSecurityProvider,
     HeuristicProvider,
     HuggingFaceSecurityProvider,
+    OpenRouterSecurityProvider,
     OpenWeightSecurityProvider,
 )
 from .providers.gguf import DEFAULT_MODEL_ALIAS as GGUF_DEFAULT_MODEL
+from .providers.openrouter import DEFAULT_MODEL_ALIAS as OPENROUTER_DEFAULT_MODEL
 from .providers.openweight import DEFAULT_MODEL_ALIAS as OPENWEIGHT_DEFAULT_MODEL
 from .reporting import print_report_summary, write_report
 
@@ -42,7 +45,10 @@ def _provider(name: str, model_id: str | None):
     # security model (providers/openweight.py) -- both need a GPU host.
     # "gguf" runs a quantized build of those same small models via
     # llama.cpp so it can realistically finish on a CPU-only GitHub Actions
-    # runner (providers/gguf.py). Anything else falls back to the regex
+    # runner (providers/gguf.py). "openrouter" calls OpenRouter's hosted
+    # API instead of loading any weights locally -- no GPU/download
+    # needed, but requires OPENROUTER_API_KEY in the environment
+    # (providers/openrouter.py). Anything else falls back to the regex
     # heuristic (providers/heuristic.py). Every default GitHub Actions
     # workflow passes --provider heuristic (or omits it, since that's the
     # default); the multi-model comparison workflow passes --provider gguf.
@@ -52,6 +58,8 @@ def _provider(name: str, model_id: str | None):
         return OpenWeightSecurityProvider(model=model_id or OPENWEIGHT_DEFAULT_MODEL)
     if name == "gguf":
         return GgufSecurityProvider(model=model_id or GGUF_DEFAULT_MODEL)
+    if name == "openrouter":
+        return OpenRouterSecurityProvider(model=model_id or OPENROUTER_DEFAULT_MODEL)
     return HeuristicProvider()
 
 
@@ -88,23 +96,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["heuristic", "huggingface", "openweight", "gguf"],
+        choices=["heuristic", "huggingface", "openweight", "gguf", "openrouter"],
         default="heuristic",
         help="Security analysis provider.",
     )
     openweight_aliases = ", ".join(sorted(OPENWEIGHT_MODEL_CHOICES))
     gguf_aliases = ", ".join(sorted(GGUF_MODEL_CHOICES))
+    openrouter_aliases = ", ".join(sorted(OPENROUTER_MODEL_CHOICES))
     parser.add_argument(
         "--model-id",
         default=None,
         help=(
             "Model id. Defaults to openai/gpt-oss-120b for --provider "
             f"huggingface, {OPENWEIGHT_DEFAULT_MODEL} for --provider "
-            f"openweight, or {GGUF_DEFAULT_MODEL} for --provider gguf. "
+            f"openweight, or {OPENROUTER_DEFAULT_MODEL} for --provider "
+            "openrouter. --provider gguf has no working default right now "
+            "(GGUF_MODEL_CHOICES is empty -- every prior alias timed out "
+            "in CI) and requires an explicit "
+            '"repo_id:filename-glob" string. '
             f"For --provider openweight, a short alias ({openweight_aliases}) "
             "or any other Hugging Face repo id is accepted. For --provider "
-            f"gguf, a short alias ({gguf_aliases}) or an explicit "
-            '"repo_id:filename-glob" string is accepted.'
+            f"gguf, a short alias ({gguf_aliases or 'none currently registered'}"
+            ') or an explicit "repo_id:filename-glob" string is accepted. '
+            f"For --provider openrouter, a short alias ({openrouter_aliases}) "
+            "or any other OpenRouter model id is accepted; requires "
+            "OPENROUTER_API_KEY in the environment."
         ),
     )
     parser.add_argument("--base-ref", help="Base git ref for diff-based analysis.")

@@ -42,11 +42,22 @@ class FoldSystemIntoUserTests(unittest.TestCase):
 
 
 class ResolveModelTests(unittest.TestCase):
-    def test_default_alias_resolves_to_a_registered_choice(self):
-        self.assertIn(DEFAULT_MODEL_ALIAS, GGUF_MODEL_CHOICES)
-        repo_id, filename = _resolve(DEFAULT_MODEL_ALIAS)
-        self.assertTrue(repo_id)
-        self.assertTrue(filename)
+    def test_alias_table_is_intentionally_empty(self):
+        # Every previous alias (foundation-sec-8b-reasoning,
+        # foundation-sec-8b, qwen-coder-7b, codegemma-7b) was removed on
+        # 2026-07-25 after all four hit the CI job's 120-minute timeout in
+        # both openweight comparison workflows -- see the module-level
+        # comment above GGUF_MODEL_CHOICES. Re-add this assertion's
+        # counterpart once a working alias exists again.
+        self.assertEqual(GGUF_MODEL_CHOICES, {})
+
+    def test_default_alias_no_longer_resolves(self):
+        # DEFAULT_MODEL_ALIAS is left dangling on purpose while the table
+        # is empty, so --provider gguf with no --model-id fails fast and
+        # explicitly rather than silently picking a model known to time
+        # out.
+        with self.assertRaises(ValueError):
+            _resolve(DEFAULT_MODEL_ALIAS)
 
     def test_explicit_repo_filename_string_bypasses_the_alias_table(self):
         repo_id, filename = _resolve("some/repo:*.gguf")
