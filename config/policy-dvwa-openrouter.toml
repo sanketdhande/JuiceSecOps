@@ -1,0 +1,36 @@
+[gate]
+block_severity_floor = "critical"
+review_severity_floor = "high"
+block_risk_score = 70
+review_risk_score = 45
+fail_closed_on_provider_error = true
+max_findings_per_run = 300
+
+[privacy]
+redact_secrets = true
+max_evidence_chars = 500
+max_diff_chars = 7000
+max_snippet_chars = 2500
+
+[changes]
+# Same scope as policy-dvwa.toml, but max_changed_files is cut way down --
+# see policy-openrouter.toml's comment for why: OpenRouter's free-tier
+# (":free") models are rate-limited per API key (20 requests/minute, 50
+# requests/day without $10+ of purchased credit, shared across every model
+# call made with that key -- not per workflow), so the cap here has to
+# leave room for dvwa-security-report-openrouter.yml and
+# juice-shop-security-report-openrouter.yml to both run against the same
+# key on the same day.
+max_changed_files = 5
+include_extensions = [".php", ".sql", ".yml", ".yaml", ".js", ".html"]
+include_paths = [
+  "vulnerabilities/",
+  "hackable/",
+  "includes/",
+  "login.php",
+  "setup.php",
+  "index.php",
+  "config/",
+  "docker/",
+  "compose.yml",
+]
