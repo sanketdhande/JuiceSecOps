@@ -13,6 +13,7 @@ authors = [{name = "Sanket Vasant Dhande"}]
 dependencies = [
   "torch>=2.2,<3",
   "transformers>=4.55,<5",
+  "accelerate>=0.34,<2",
 ]
 
 [project.optional-dependencies]

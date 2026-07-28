@@ -103,7 +103,7 @@ It uses this model in two ways:
 1. Review changed Juice Shop files and emit candidate vulnerabilities as structured JSON.
 2. Triage normalized scanner findings into `block`, `review`, or `accept` decisions.
 
-`torch`/`transformers` are required dependencies (`pyproject.toml`) -- there is no non-LLM fallback provider, so `pip install -e '.[dev]'` always pulls them in and every `python -m juicesecops` run loads the model.
+`torch`/`transformers`/`accelerate` are required dependencies (`pyproject.toml`) -- there is no non-LLM fallback provider, so `pip install -e '.[dev]'` always pulls them in and every `python -m juicesecops` run loads the model.
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -209,7 +209,7 @@ python -m pip install -e '.[dev]'
 ./scripts/run_demo.sh
 ```
 
-This writes reports beneath `results/demo/`. Because `torch`/`transformers` are required dependencies and there is no non-LLM fallback, this loads `openai/gpt-oss-20b` to triage the sample findings -- it needs enough GPU/CPU memory to host the model and is not a lightweight, model-free demo.
+This writes reports beneath `results/demo/`. Because `torch`/`transformers`/`accelerate` are required dependencies and there is no non-LLM fallback, this loads `openai/gpt-oss-20b` to triage the sample findings -- it needs enough GPU/CPU memory to host the model and is not a lightweight, model-free demo.
 
 `targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and `run_juice_shop_pipeline.sh` pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 

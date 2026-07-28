@@ -44,7 +44,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
           python -m pip install semgrep
-        # `.[dev]` pulls in torch/transformers too -- they're required
+        # `.[dev]` pulls in torch/transformers/accelerate too -- they're required
         # dependencies now that HuggingFaceSecurityProvider is the only
         # provider (pyproject.toml).
 
