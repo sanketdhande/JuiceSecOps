@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 # This is the orchestrator called from cli.py: main(). The `provider` argument
-# is a SecurityProvider (providers/base.py) -- either HeuristicProvider
-# (regex stand-in, used in CI) or HuggingFaceSecurityProvider (real LLM call,
-# local-only, see providers/huggingface.py). The provider is used in exactly
-# two places below: provider.review_change() (the LLM "finds new bugs in a
-# diff" stage) and provider.triage() (the LLM "judge severity of a finding"
-# stage). Everything else here (parsing scanner JSON, dedup, redaction, the
-# pass/fail gate) is deterministic Python with no model involved.
+# is a SecurityProvider (providers/base.py) -- HuggingFaceSecurityProvider,
+# which calls openai/gpt-oss-20b via transformers (see
+# providers/huggingface.py). The provider is used in exactly two places
+# below: provider.review_change() (the LLM "finds new bugs in a diff" stage)
+# and provider.triage() (the LLM "judge severity of a finding" stage).
+# Everything else here (parsing scanner JSON, dedup, redaction, the pass/fail
+# gate) is deterministic Python with no model involved.
 import hashlib
 import time
 from collections import Counter
@@ -56,10 +56,7 @@ def _review_error_finding(
         category="code",
         confidence=1.0,
         location=Location(path=path),
-        remediation=(
-            "Retry the model call, inspect provider configuration, or fall back to the "
-            "heuristic provider."
-        ),
+        remediation="Retry the model call or inspect provider configuration.",
         fingerprint=_provider_error_fingerprint(provider, path, exc),
         metadata={"source": "diff-review", "provider_error": f"{type(exc).__name__}: {exc}"},
     )
@@ -127,7 +124,7 @@ def run_pipeline(
     if review_changes and target_repo is not None:
         # Step 2: figure out which files to show the LLM (diffing.py).
         changes = collect_changes(target_repo, policy, base_ref=base_ref, head_ref=head_ref)
-        # Step 3: the LLM/heuristic change-review call. Each change becomes
+        # Step 3: the LLM change-review call. Each change becomes
         # zero or more Finding(tool="llm-diff", ...) objects -- this is the
         # "LLM findings" bucket you see in the report.
         for change in changes:
@@ -149,7 +146,7 @@ def run_pipeline(
     if policy.redact_secrets:
         findings = [_sanitize_finding(finding, policy) for finding in findings]
 
-    # Step 4: the LLM/heuristic triage call, once per finding (both scanner
+    # Step 4: the LLM triage call, once per finding (both scanner
     # findings and the llm-diff findings from step 3 go through this). This
     # is what decides block/review/accept and the risk_score used by the
     # deterministic gate below -- it does not create new findings.
@@ -181,7 +178,7 @@ def run_pipeline(
                 )
             )
 
-    # Step 5: deterministic pass/fail gate (policy.py) -- the LLM/heuristic
+    # Step 5: deterministic pass/fail gate (policy.py) -- the LLM
     # provider is advisory input to this, never the final authority.
     gate = evaluate_gate(findings, decisions, policy)
     return PipelineReport(

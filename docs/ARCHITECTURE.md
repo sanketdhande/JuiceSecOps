@@ -40,8 +40,7 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 | `scripts/fetch_juice_shop.sh` | Fetches the target application into `targets/juice-shop/` |
 | `parsers/reports.py` | Normalizes Semgrep, Trivy, ZAP, and generic JSON |
 | `diffing.py` | Extracts changed Juice Shop files from git |
-| `providers/heuristic.py` | Offline baseline for experiments and tests |
-| `providers/huggingface.py` | `openai/gpt-oss-120b` integration |
+| `providers/huggingface.py` | `openai/gpt-oss-20b` integration (the only provider) |
 | `pipeline.py` | Orchestration for change review, triage, and gating |
 | `policy.py` | Deterministic control layer |
 | `reporting.py` | JSON and Markdown evidence output |
@@ -56,12 +55,7 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 
 ## Evaluation path
 
-The prototype supports two experimental conditions:
-
-1. `heuristic`: deterministic baseline without the large model.
-2. `huggingface`: LLM-assisted review and triage using `openai/gpt-oss-120b`.
-
-This separation makes it possible to compare latency, gate decisions, and potential gains in contextual detection.
+Every run compares two buckets of findings from the same experimental condition: `traditional` (Semgrep/Trivy/ZAP) versus `llm` (the `openai/gpt-oss-20b`-assisted diff-review stage, tagged `tool="llm-diff"`). `evaluation.py` exposes this split plus an optional precision comparison against `--ground-truth`, so latency, gate decisions, and contextual-detection gains can be measured without a separate no-model baseline run.
 
 The CI workflow also runs local code quality checks and the Python test suite before security scanning so the DevSecOps pipeline covers both software correctness and security analysis.
 

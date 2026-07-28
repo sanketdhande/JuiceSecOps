@@ -8,8 +8,8 @@ from .models import Finding
 
 
 def finding_source(finding: Finding) -> str:
-    # Both providers (heuristic and huggingface) tag every finding they
-    # produce with tool="llm-diff" -- that string is the only signal used
+    # The provider (huggingface) tags every finding it
+    # produces with tool="llm-diff" -- that string is the only signal used
     # anywhere in reporting/evaluation to separate "LLM findings" from
     # scanner findings (semgrep/trivy/zap).
     return "llm" if finding.tool == "llm-diff" else "traditional"

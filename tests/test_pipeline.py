@@ -17,12 +17,52 @@ from juicesecops.models import (
 )
 from juicesecops.pipeline import run_pipeline
 from juicesecops.policy import Policy
-from juicesecops.providers import HeuristicProvider
 from juicesecops.reporting import render_console_summary, write_report
 
 
 def _run(repo, *args):
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+class FakeProvider:
+    # Deterministic stand-in for HuggingFaceSecurityProvider: exercises
+    # run_pipeline()'s dedup/redaction/gate logic without a real model call.
+    name = "fake"
+    model = "fake-model"
+
+    def triage(self, finding: Finding, context: dict[str, str]) -> TriageDecision:
+        del context
+        risk = 90 if finding.category == "secret" else 40
+        return TriageDecision(
+            finding_fingerprint=finding.fingerprint,
+            disposition="block" if risk >= 70 else "accept",
+            risk_score=risk,
+            true_positive_likelihood=finding.confidence,
+            exploitability="unknown",
+            summary="fake triage",
+            rationale="fake rationale",
+            remediation=finding.remediation,
+            provider=self.name,
+            model=self.model,
+            latency_ms=0.0,
+        )
+
+    def review_change(self, change, context):
+        del context
+        return [
+            Finding(
+                tool="llm-diff",
+                rule_id="fake.rule",
+                title="Fake LLM finding",
+                description="Synthetic finding for pipeline tests",
+                severity=Severity.HIGH,
+                category="code",
+                confidence=0.9,
+                location=Location(path=change.path, line=1),
+                remediation="Review the change.",
+                fingerprint=f"fake-{change.path}",
+            )
+        ]
 
 
 class BrokenReviewProvider:
@@ -91,7 +131,7 @@ class PipelineTests(unittest.TestCase):
 
             report = run_pipeline(
                 inputs=[report_path],
-                provider=HeuristicProvider(),
+                provider=FakeProvider(),
                 policy=Policy(),
                 target_repo=repo,
                 review_changes=True,
@@ -148,7 +188,7 @@ class PipelineTests(unittest.TestCase):
             schema_version="1.0",
             generated_at="2026-07-23T00:00:00+00:00",
             inputs=[],
-            provider="heuristic",
+            provider="huggingface",
             findings=[
                 Finding(
                     tool="zap",

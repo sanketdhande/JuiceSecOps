@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # Step 2 of the pipeline (see pipeline.py): turns a git diff of --target-repo
 # into the list of CodeChange objects that get handed to
-# provider.review_change() -- this is what feeds the LLM/heuristic
+# provider.review_change() -- this is what feeds the LLM
 # change-review stage. If this returns [], the LLM stage has nothing to look
 # at and produces zero "llm-diff" findings.
 import subprocess

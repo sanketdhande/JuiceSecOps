@@ -33,10 +33,10 @@ Evaluate the capabilities of Large Language Models for software vulnerability de
 
 Project mapping:
 
-- `providers/huggingface.py` integrates `openai/gpt-oss-120b`.
+- `providers/huggingface.py` integrates `openai/gpt-oss-20b`.
 - The model reviews git diffs from Juice Shop and emits structured vulnerability candidates.
 - The same model triages scanner findings to produce risk-oriented explanations.
-- `providers/heuristic.py` supplies a non-LLM baseline for comparison.
+- `evaluation.py` splits every report into `traditional` (scanner) and `llm` (diff-review) findings so LLM-originated detections can be compared against the scanner baseline without a separate non-LLM run.
 
 ## Objective 3
 
@@ -56,7 +56,7 @@ Project mapping:
 
 - `scripts/run_juice_shop_pipeline.sh` demonstrates end-to-end orchestration.
 - `.github/workflows/` provides split CI workflows for linting, security reporting, Semgrep, Trivy, and ZAP.
-- `samples/reports/` and `scripts/run_demo.sh` allow local testing without every external dependency.
+- `samples/reports/` and `scripts/run_demo.sh` allow local testing against bundled sample scanner reports instead of running Semgrep/Trivy/ZAP.
 
 ## Objective 5
 
@@ -65,7 +65,7 @@ Experimentally evaluate the effectiveness of the proposed system.
 Project mapping:
 
 - The project writes reproducible JSON artifacts.
-- The heuristic baseline creates a clear comparison condition.
+- The traditional/LLM finding split (`evaluation.py`) creates a clear comparison condition within each run.
 - The target application is fixed to a known Juice Shop checkout.
 - The same policy and scanner inputs can be replayed across runs for thesis measurements.
 
@@ -86,7 +86,7 @@ Project mapping:
 - The orchestration layer is implemented in Python.
 - The CI/CD examples are implemented with GitHub Actions.
 - The traditional security stages use Semgrep, Trivy, and OWASP ZAP.
-- The LLM integration is pluggable so the thesis can compare heuristic and model-assisted conditions.
+- The LLM integration (`openai/gpt-oss-20b` via `providers/huggingface.py`) sits behind the same `SecurityProvider` interface `pipeline.py` calls, keeping the model call swappable without touching orchestration code.
 
 ### Experimental evaluation
 
