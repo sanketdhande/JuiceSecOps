@@ -15,8 +15,8 @@ class MissingApiKeyTests(unittest.TestCase):
 
 
 class DefaultModelTests(unittest.TestCase):
-    def test_default_model_is_gpt_oss_120b(self):
-        self.assertEqual(DEFAULT_MODEL, "openai/gpt-oss-120b")
+    def test_default_model_is_gpt_oss_20b(self):
+        self.assertEqual(DEFAULT_MODEL, "openai/gpt-oss-20b")
         with mock.patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}, clear=True):
             self.assertEqual(GroqSecurityProvider().model, DEFAULT_MODEL)
 

@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_REPO="${1:-${ROOT_DIR}/targets/juice-shop}"
 PROVIDER="${2:-groq}"
-MODEL_ID="${3:-openai/gpt-oss-120b}"
+MODEL_ID="${3:-openai/gpt-oss-20b}"
 OUTPUT_DIR="${ROOT_DIR}/results/juice-shop"
 NETWORK_NAME="juice-shop-net"
 

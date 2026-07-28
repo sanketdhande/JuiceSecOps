@@ -17,7 +17,7 @@ The implementation focuses on code analysis and vulnerability detection inside C
 1. Analyze existing DevSecOps security testing techniques by combining SAST, dependency scanning, secret detection, and DAST report ingestion.
 2. Evaluate LLM capability for vulnerability detection by reviewing code changes and triaging scanner findings.
 3. Design a DevSecOps pipeline architecture that inserts an LLM-based security analyzer after traditional scanning stages.
-4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and an LLM review stage, run entirely through hosted APIs (Groq for `openai/gpt-oss-120b`, or OpenRouter for `meta-llama/llama-3.3-70b-instruct`) -- no model weights ever run on the local machine.
+4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and an LLM review stage, run entirely through hosted APIs (Groq for `openai/gpt-oss-20b`, or OpenRouter for `meta-llama/llama-3.3-70b-instruct`) -- no model weights ever run on the local machine.
 5. Support experimental evaluation through repeatable reports and sample inputs.
 
 ## Architecture
@@ -69,7 +69,7 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 - `scripts/run_demo.sh`: local demo against the bundled sample reports (defaults to `--provider groq`).
 - `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with a configurable `--provider`/`--model-id`.
 - `scripts/fetch_dvwa.sh`, `scripts/run_dvwa_pipeline.sh`, `config/policy-dvwa.toml`: the same set of tooling for the DVWA target -- see [DVWA target](#dvwa-target) below.
-- `.github/workflows/`: split CI workflows for linting, reporting, Semgrep, Trivy, and ZAP stages.
+- `.github/workflows/`: split CI workflows for linting, Semgrep, Trivy, ZAP, and one reporting workflow per target/provider combination (see [CI/CD behavior](#cicd-behavior) below).
 
 ## LLM providers
 
@@ -77,16 +77,16 @@ Both providers are hosted APIs -- **no model weights ever run on the local machi
 
 | Provider | `--provider` | Model | Runs where | Needs |
 | --- | --- | --- | --- | --- |
-| [`GroqSecurityProvider`](src/juicesecops/providers/groq.py) (default) | `groq` | `openai/gpt-oss-120b` | Groq's hosted, OpenAI-compatible API | `pip install -e '.[dev]'` (stdlib only), a `GROQ_API_KEY` |
+| [`GroqSecurityProvider`](src/juicesecops/providers/groq.py) (default) | `groq` | `openai/gpt-oss-20b` | Groq's hosted, OpenAI-compatible API | `pip install -e '.[dev]'` (stdlib only), a `GROQ_API_KEY` |
 | [`OpenRouterSecurityProvider`](src/juicesecops/providers/openrouter.py) | `openrouter` | `meta-llama/llama-3.3-70b-instruct` | OpenRouter's official Python SDK | `pip install -e '.[openrouter,dev]'`, an `OPENROUTER_API_KEY` |
 
-`--model-id` overrides the default for either, so e.g. `--provider openrouter --model-id openai/gpt-oss-120b` works too (any model both providers' respective hosts serve).
+`--model-id` overrides the default for either, so e.g. `--provider openrouter --model-id openai/gpt-oss-20b` works too (any model both providers' respective hosts serve).
 
 ### Hosted: Groq's API
 
-`GroqSecurityProvider` calls Groq's hosted, OpenAI-compatible chat-completions API (`https://api.groq.com/openai/v1/chat/completions`) for `openai/gpt-oss-120b` -- no local weights, no GPU, no download, just an HTTPS call over the standard library (`urllib`). This is the default provider, and the one CI workflows use.
+`GroqSecurityProvider` calls Groq's hosted, OpenAI-compatible chat-completions API (`https://api.groq.com/openai/v1/chat/completions`) for `openai/gpt-oss-20b` -- no local weights, no GPU, no download, just an HTTPS call over the standard library (`urllib`). This is the default provider, and the one CI workflows use.
 
-For this specific model, Groq's free tier is genuinely free: **30 requests/minute and 1,000 requests/day** for `openai/gpt-oss-120b`, no credit card required (per [Groq's rate-limit docs](https://console.groq.com/docs/rate-limits)). OpenRouter has no free variant of this model at all -- `openai/gpt-oss-120b` is paid-only there (~$0.03/$0.17 per 1M input/output tokens); only the smaller `openai/gpt-oss-20b` has an OpenRouter `:free` tier (and even that is capped at 20 requests/minute and 50 requests/day without $10+ of purchased credit).
+For this specific model, Groq's free tier is more generous than OpenRouter's: **30 requests/minute and 1,000 requests/day** for `openai/gpt-oss-20b`, no credit card required (per [Groq's rate-limit docs](https://console.groq.com/docs/rate-limits)). OpenRouter also has a free (`:free` suffix) tier for this exact model, but it's capped at 20 requests/minute and only 50 requests/day without $10+ of purchased credit.
 
 Requires `GROQ_API_KEY` in the environment (never pass it as `--model-id` or any other CLI argument -- argv ends up in shell history and CI logs):
 
@@ -146,14 +146,15 @@ Or use the bundled script:
 
 ## DVWA target
 
-The pipeline also supports [DVWA (Damn Vulnerable Web Application)](https://github.com/digininja/DVWA) as a second target, alongside Juice Shop. `--target-repo` and `--policy` are already generic in `cli.py`/`pipeline.py`, so no package code changes were needed -- DVWA gets its own fetch script, policy file, pipeline script, and CI workflow mirroring the Juice Shop ones exactly:
+The pipeline also supports [DVWA (Damn Vulnerable Web Application)](https://github.com/digininja/DVWA) as a second target, alongside Juice Shop. `--target-repo` and `--policy` are already generic in `cli.py`/`pipeline.py`, so no package code changes were needed -- DVWA gets its own fetch script, policy file, pipeline script, and CI workflows mirroring the Juice Shop ones exactly:
 
 | Juice Shop | DVWA |
 | --- | --- |
 | `scripts/fetch_juice_shop.sh` | `scripts/fetch_dvwa.sh` |
 | `config/policy.toml` | `config/policy-dvwa.toml` |
 | `scripts/run_juice_shop_pipeline.sh` | `scripts/run_dvwa_pipeline.sh` |
-| `.github/workflows/juice-shop-security-report.yml` | `.github/workflows/dvwa-security-report.yml` |
+| `.github/workflows/juice-shop-security-report.yml` (Groq) | `.github/workflows/dvwa-security-report.yml` (Groq) |
+| `.github/workflows/juice-shop-security-report-openrouter.yml` | `.github/workflows/dvwa-security-report-openrouter.yml` |
 
 `config/policy-dvwa.toml` scopes the LLM diff-review stage to DVWA's PHP layout (`vulnerabilities/`, `hackable/`, `includes/`, `login.php`, `setup.php`, `config/`) instead of Juice Shop's TypeScript one.
 
@@ -172,7 +173,7 @@ This only sets up the database -- it does not automate DVWA's own login or its p
 ./scripts/run_dvwa_pipeline.sh targets/dvwa groq
 ```
 
-CI: `dvwa-security-report.yml` mirrors `juice-shop-security-report.yml` (runs on push to `main` and `workflow_dispatch`, both `--provider groq` and `--provider openrouter` against the same scanner reports -- see [CI/CD behavior](#cicd-behavior) below for the separate API keys each workflow uses).
+CI: `dvwa-security-report.yml`/`dvwa-security-report-openrouter.yml` mirror `juice-shop-security-report.yml`/`juice-shop-security-report-openrouter.yml` (run on push to `main` and `workflow_dispatch`) -- see [CI/CD behavior](#cicd-behavior) below for why there are 4 separate workflows and which API key each one uses.
 
 ## LLM and scanner comparison
 
@@ -231,24 +232,33 @@ python -m pip install -e '.[dev]'
 ./scripts/run_demo.sh
 ```
 
-This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-120b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`). Neither provider needs a GPU or downloads any model weights.
+This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-20b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`). Neither provider needs a GPU or downloads any model weights.
 
 `targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and `run_juice_shop_pipeline.sh` pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 
 ## CI/CD behavior
 
-The GitHub Actions workflows (`juice-shop-security-report.yml`, `dvwa-security-report.yml`) run the scanner stages once, then run the LLM stage **twice against the same scanner reports** -- once with `--provider groq` (`openai/gpt-oss-120b`) and once with `--provider openrouter` (`meta-llama/llama-3.3-70b-instruct`) -- on push to `main` and on `workflow_dispatch`. Neither provider loads any model locally, so standard GitHub-hosted runners' lack of a GPU is a non-issue. Each run writes its own report and is uploaded as a separate artifact (`*-security-report` for Groq, `*-security-report-openrouter` for OpenRouter).
+There are **4 reporting workflows**, one per target/provider combination, each fully self-contained (its own Semgrep/Trivy/ZAP scan, not shared with its sibling):
 
-The two workflows intentionally use **separate API keys** so the Juice Shop and DVWA runs don't share one account's rate-limit budget:
+| Workflow | Target | Provider | Model |
+| --- | --- | --- | --- |
+| `juice-shop-security-report.yml` | Juice Shop | Groq | `openai/gpt-oss-20b` |
+| `juice-shop-security-report-openrouter.yml` | Juice Shop | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
+| `dvwa-security-report.yml` | DVWA | Groq | `openai/gpt-oss-20b` |
+| `dvwa-security-report-openrouter.yml` | DVWA | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
+
+They're separate workflow files rather than multiple steps in one workflow so the Groq and OpenRouter runs are **independent GitHub Actions jobs that run in parallel** instead of one job doing two sequential passes (which roughly doubled wall-clock time when they were combined). Neither provider loads any model locally, so standard GitHub-hosted runners' lack of a GPU is a non-issue. Each workflow runs on push to `main` and on `workflow_dispatch`, and uploads its own artifact (`juice-shop-security-report`, `juice-shop-security-report-openrouter`, `dvwa-security-report`, `dvwa-security-report-openrouter`).
+
+The Juice Shop and DVWA workflows intentionally use **separate API keys** so the two targets don't share one account's rate-limit budget:
 
 | Secret | Used by |
 | --- | --- |
-| `GROQ_API_KEY` | `juice-shop-security-report.yml`'s Groq step |
-| `OPENROUTER_API_KEY` | `juice-shop-security-report.yml`'s OpenRouter step |
-| `GROQ_API_KEY2` | `dvwa-security-report.yml`'s Groq step |
-| `OPENROUTER_API_KEY2` | `dvwa-security-report.yml`'s OpenRouter step |
+| `GROQ_API_KEY` | `juice-shop-security-report.yml` |
+| `OPENROUTER_API_KEY` | `juice-shop-security-report-openrouter.yml` |
+| `GROQ_API_KEY2` | `dvwa-security-report.yml` |
+| `OPENROUTER_API_KEY2` | `dvwa-security-report-openrouter.yml` |
 
-All four are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that step's gate call fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__` raises when the key is missing -- the other provider's step is unaffected, since they're independent steps.
+All four are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that workflow's gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__` raises when the key is missing -- the other three workflows are unaffected, since they're independent runs.
 
 The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the target application to be committed into this repository.
 
@@ -256,7 +266,7 @@ The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the t
 
 - The deterministic gate is the final authority. The LLM is advisory but integrated into the decision pipeline.
 - `targets/juice-shop` and `targets/dvwa` are intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
-- `openai/gpt-oss-120b` (via Groq) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. Both are hosted APIs; there is no local-inference or non-LLM fallback provider.
+- `openai/gpt-oss-20b` (via Groq) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. Both are hosted APIs; there is no local-inference or non-LLM fallback provider.
 - The current prototype is optimized for reproducible thesis experiments rather than production deployment hardening.
 
 ## Further documentation

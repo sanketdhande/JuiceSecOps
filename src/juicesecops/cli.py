@@ -32,7 +32,7 @@ def _parse_context(values: list[str]) -> dict[str, str]:
 def _provider(name: str, model_id: str | None):
     # Both providers are hosted APIs -- no model weights ever run on this
     # machine. "groq" (default) calls Groq's hosted API for
-    # openai/gpt-oss-120b (providers/groq.py) -- requires GROQ_API_KEY.
+    # openai/gpt-oss-20b (providers/groq.py) -- requires GROQ_API_KEY.
     # Every default GitHub Actions workflow passes --provider groq (or
     # omits it, since that's the default). "openrouter" calls OpenRouter's
     # official Python SDK instead (providers/openrouter.py), defaulting to

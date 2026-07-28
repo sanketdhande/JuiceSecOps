@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 # Hosted LLM provider: calls Groq's OpenAI-compatible chat-completions API
-# for openai/gpt-oss-120b. No local model weights, no GPU, no download --
+# for openai/gpt-oss-20b. No local model weights, no GPU, no download --
 # just an HTTPS call -- and, for this exact model, genuinely free: per
 # Groq's docs (https://console.groq.com/docs/rate-limits), the free tier
-# for openai/gpt-oss-120b is 30 requests/minute, 1,000 requests/day, and
-# 200K tokens/day, no credit card required. OpenRouter has no free variant
-# of this model at all (openai/gpt-oss-120b is paid-only there, ~$0.03/
-# $0.17 per 1M input/output tokens) -- only the smaller openai/gpt-oss-20b
-# has an OpenRouter ":free" tier. This is the default provider, and the one
-# CI workflows use.
+# for openai/gpt-oss-20b is 30 requests/minute, 1,000 requests/day, and
+# 200K tokens/day, no credit card required. OpenRouter also has a free
+# (":free" suffix) tier for this exact model, but it's more limited: 20
+# requests/minute and only 50 requests/day without $10+ of purchased
+# credit. This is the default provider, and the one CI workflows use.
 #
 # Requires a GROQ_API_KEY in the environment -- never pass it as
 # --model-id or any other CLI argument, since argv ends up in shell
@@ -23,7 +22,7 @@ import urllib.request
 from ._prompted import PromptedLLMProvider
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # Groq's API sits behind Cloudflare, and Cloudflare's "browser integrity
 # check" rejects the default User-Agent urllib.request sends
@@ -45,9 +44,9 @@ RETRY_BASE_DELAY_SECONDS = 2.0
 
 
 class GroqSecurityProvider(PromptedLLMProvider):
-    """LLM review/triage via Groq's hosted `openai/gpt-oss-120b` API.
+    """LLM review/triage via Groq's hosted `openai/gpt-oss-20b` API.
 
-    `model` may be any Groq model id (defaults to `openai/gpt-oss-120b`).
+    `model` may be any Groq model id (defaults to `openai/gpt-oss-20b`).
     """
 
     name = "groq"

@@ -1,33 +1,22 @@
-# DVWA counterpart to juice-shop-security-report.yml. Traditional scanners
-# (Semgrep, Trivy, ZAP) run first and write JSON reports under results/dvwa/.
-# The "Run thesis security gate" step then invokes the Python package in
-# src/juicesecops/ via `python -m juicesecops` (entry point:
-# src/juicesecops/__main__.py -> cli.py -> pipeline.py). That step is also
-# where the LLM stage runs: pipeline.py diffs targets/dvwa and hands each
-# changed file to GroqSecurityProvider (providers/groq.py), which calls
-# Groq's hosted, OpenAI-compatible API for openai/gpt-oss-20b -- no model
-# weights are ever loaded locally, and Groq's free tier for this model
-# (30 req/min, 1,000 req/day) is more generous than OpenRouter's free tier
-# for the same model. Requires the GROQ_API_KEY2 repository secret
-# (Settings -> Secrets and variables -> Actions) -- suffixed "2"
-# deliberately, since this workflow uses a separate API key from
-# juice-shop-security-report.yml's GROQ_API_KEY so the two targets don't
-# share one account's rate-limit budget. All findings + the pass/fail
-# gate end up in results/dvwa/report.json and report.md, uploaded as the
-# dvwa-security-report artifact below.
+# OpenRouter counterpart to dvwa-security-report.yml: same
+# traditional-scanner and DVWA-setup stages (Semgrep, Trivy, docker compose,
+# database init, ZAP), but the "Run thesis security gate" step uses
+# OpenRouterSecurityProvider (providers/openrouter.py) instead of
+# GroqSecurityProvider -- OpenRouter's official Python SDK, defaulting to
+# meta-llama/llama-3.3-70b-instruct, a different model/host than Groq. No
+# model weights are ever loaded locally. Requires the OPENROUTER_API_KEY2
+# repository secret (Settings -> Secrets and variables -> Actions) --
+# suffixed "2" deliberately, since this workflow uses a separate API key
+# from juice-shop-security-report-openrouter.yml's OPENROUTER_API_KEY so
+# the two targets don't share one account's rate-limit budget. All
+# findings + the pass/fail gate end up in results/dvwa-ci/report.json and
+# report.md, uploaded as the dvwa-security-report-openrouter artifact
+# below.
 #
-# See dvwa-security-report-openrouter.yml for the OpenRouter counterpart
-# -- it's a separate workflow (not a second step here) so the two
-# providers' runs are independent GitHub Actions jobs that can run in
-# parallel instead of one job doing both passes sequentially.
-#
-# Unlike Juice Shop (a single Node container with no setup step), DVWA is a
-# PHP app with a MariaDB backend: it ships its own docker-compose stack
-# (targets/dvwa/compose.yml) and needs a one-time "Create / Reset Database"
-# request against setup.php before it's actually scannable -- see the
-# "Start DVWA" and "Initialize the DVWA database" steps below.
-
-name: dvwa-security-report
+# This is a separate workflow (not a second step in dvwa-security-report.yml)
+# so the Groq and OpenRouter runs are independent GitHub Actions jobs that
+# can run in parallel instead of one job doing both passes sequentially.
+name: dvwa-security-report-openrouter
 
 on:
   workflow_dispatch:
@@ -51,11 +40,11 @@ jobs:
       - name: Install project and Semgrep
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
+          python -m pip install -e '.[openrouter,dev]'
           python -m pip install semgrep
-        # `.[dev]` alone is enough here -- GroqSecurityProvider is a plain
-        # HTTPS call (urllib, stdlib only); no model weights are ever
-        # loaded locally.
+        # `[openrouter]` pulls in the `openrouter` SDK for
+        # OpenRouterSecurityProvider. No model weights are ever loaded
+        # locally.
 
       - name: Prepare workspace
         run: |
@@ -128,7 +117,7 @@ jobs:
       # deterministic pass/fail gate (policy.py) ---
       - name: Run thesis security gate
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY2 }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY2 }}
         run: |
           if [ -f results/dvwa-ci/zap.json ]; then
             ZAP_INPUT="--input results/dvwa-ci/zap.json"
@@ -146,20 +135,20 @@ jobs:
             --input results/dvwa-ci/semgrep.json \
             --input results/dvwa-ci/trivy.json \
             $ZAP_INPUT \
-            --provider groq \
+            --provider openrouter \
             --target-repo targets/dvwa \
             --policy config/policy-dvwa.toml \
             --base-ref "$EMPTY_TREE" \
             --head-ref HEAD \
             --output results/dvwa-ci \
             --no-fail
-          echo "DVWA report workflow completed. Gate status is recorded in results/dvwa-ci/report.json and results/dvwa-ci/report.md."
+          echo "DVWA (OpenRouter) report workflow completed. Gate status is recorded in results/dvwa-ci/report.json and results/dvwa-ci/report.md."
 
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dvwa-security-report
+          name: dvwa-security-report-openrouter
           path: results/dvwa-ci
 
       - name: Clean up

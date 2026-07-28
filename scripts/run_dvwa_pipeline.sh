@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_REPO="${1:-${ROOT_DIR}/targets/dvwa}"
 PROVIDER="${2:-groq}"
-MODEL_ID="${3:-openai/gpt-oss-120b}"
+MODEL_ID="${3:-openai/gpt-oss-20b}"
 OUTPUT_DIR="${ROOT_DIR}/results/dvwa"
 DVWA_URL="http://127.0.0.1:4280"
 

@@ -11,7 +11,7 @@ class SecurityProvider(Protocol):
     Two concrete implementations exist. Both are hosted APIs -- no model
     weights are ever loaded or run on this machine:
     - GroqSecurityProvider (groq.py): calls Groq's hosted, OpenAI-compatible
-      chat-completions API for `openai/gpt-oss-120b`. No GPU or download
+      chat-completions API for `openai/gpt-oss-20b`. No GPU or download
       needed, but requires a GROQ_API_KEY and network access. This is what
       CI workflows use, and the default provider.
     - OpenRouterSecurityProvider (openrouter.py): calls OpenRouter's official

@@ -3,7 +3,7 @@
 # real Semgrep/Trivy/ZAP output. `--skip-change-review` skips the LLM diff
 # review stage, but provider.triage() is still called once per finding
 # below (see pipeline.py). Defaults to --provider groq (Groq's hosted API
-# for openai/gpt-oss-120b, providers/groq.py) -- export GROQ_API_KEY first.
+# for openai/gpt-oss-20b, providers/groq.py) -- export GROQ_API_KEY first.
 # Pass "openrouter" as the first argument to use OpenRouter's SDK instead
 # (providers/openrouter.py, meta-llama/llama-3.3-70b-instruct by default;
 # needs `pip install -e '.[openrouter,dev]'` and OPENROUTER_API_KEY). Both
