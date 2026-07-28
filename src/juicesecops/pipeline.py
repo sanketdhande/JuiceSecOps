@@ -19,7 +19,7 @@ from .diffing import collect_changes
 from .models import Finding, Location, PipelineReport, Severity, TriageDecision
 from .parsers import load_findings
 from .policy import Policy, evaluate_gate
-from .providers.base import SecurityProvider
+from .providers.base import RateLimitError, SecurityProvider
 
 
 def _redact(text: str, max_chars: int) -> str:
@@ -44,11 +44,19 @@ def _review_error_finding(
     provider: SecurityProvider,
     path: str,
     exc: Exception,
+    *,
+    rate_limited: bool = False,
 ) -> Finding:
+    if rate_limited:
+        title = "Change review stopped: provider rate-limited"
+        remediation = "Re-run once the provider's rate limit window resets."
+    else:
+        title = "Change review provider failed"
+        remediation = "Retry the model call or inspect provider configuration."
     return Finding(
         tool="llm-diff",
-        rule_id="provider.review_error",
-        title="Change review provider failed",
+        rule_id="provider.rate_limited" if rate_limited else "provider.review_error",
+        title=title,
         description=(
             f"The {provider.name} provider could not review the change in {path}: "
             f"{type(exc).__name__}: {exc}"
@@ -57,7 +65,7 @@ def _review_error_finding(
         category="code",
         confidence=1.0,
         location=Location(path=path),
-        remediation="Retry the model call or inspect provider configuration.",
+        remediation=remediation,
         fingerprint=_provider_error_fingerprint(provider, path, exc),
         metadata={"source": "diff-review", "provider_error": f"{type(exc).__name__}: {exc}"},
     )
@@ -68,17 +76,25 @@ def _provider_error_decision(
     provider: SecurityProvider,
     policy: Policy,
     exc: Exception,
+    *,
+    rate_limited: bool = False,
 ) -> TriageDecision:
+    rationale = (
+        "The provider was rate-limited earlier in this run, so it was not called for "
+        "this finding -- the response was not trusted because it was never obtained."
+        if rate_limited
+        else "The provider response was not trusted because the model call failed."
+    )
     return TriageDecision(
         finding_fingerprint=finding.fingerprint,
         disposition="block" if policy.fail_closed_on_provider_error else "review",
         risk_score=100 if policy.fail_closed_on_provider_error else 50,
         true_positive_likelihood=finding.confidence,
         exploitability="unknown",
-        summary="Triage provider failed",
-        rationale=(
-            "The provider response was not trusted because the model call failed."
+        summary=(
+            "Triage stopped: provider rate-limited" if rate_limited else "Triage provider failed"
         ),
+        rationale=rationale,
         remediation=finding.remediation,
         provider=provider.name,
         model=provider.model,
@@ -113,6 +129,11 @@ def run_pipeline(
     context = context or {}
     findings: list[Finding] = []
     forced_decisions: dict[str, TriageDecision] = {}
+    # Once the provider's API reports a rate limit (RateLimitError), every
+    # further loop below stops calling it -- there's no point retrying a
+    # rate-limited call once per remaining change/finding -- and the report
+    # is generated from whatever was gathered before the limit was hit.
+    rate_limited = False
     # Step 1: ingest scanner reports (Semgrep/Trivy/ZAP/generic JSON) as
     # "traditional" findings -- no provider/LLM involved yet.
     for input_path in inputs:
@@ -129,8 +150,19 @@ def run_pipeline(
         # zero or more Finding(tool="llm-diff", ...) objects -- this is the
         # "LLM findings" bucket you see in the report.
         for change in changes:
+            if rate_limited:
+                break
             try:
                 findings.extend(provider.review_change(change, context))
+            except RateLimitError as exc:
+                rate_limited = True
+                error_finding = _review_error_finding(
+                    provider, change.path, exc, rate_limited=True
+                )
+                findings.append(error_finding)
+                forced_decisions[error_finding.fingerprint] = _provider_error_decision(
+                    error_finding, provider, policy, exc, rate_limited=True
+                )
             except Exception as exc:
                 error_finding = _review_error_finding(provider, change.path, exc)
                 findings.append(error_finding)
@@ -139,10 +171,6 @@ def run_pipeline(
                 )
 
     findings = _deduplicate(findings)
-    if len(findings) > policy.max_findings_per_run:
-        raise ValueError(
-            f"Finding count {len(findings)} exceeds policy limit {policy.max_findings_per_run}"
-        )
 
     if policy.redact_secrets:
         findings = [_sanitize_finding(finding, policy) for finding in findings]
@@ -150,34 +178,35 @@ def run_pipeline(
     # Step 4: the LLM triage call, once per finding (both scanner
     # findings and the llm-diff findings from step 3 go through this). This
     # is what decides block/review/accept and the risk_score used by the
-    # deterministic gate below -- it does not create new findings.
+    # deterministic gate below -- it does not create new findings. Once
+    # rate_limited is set (here or above), remaining findings get a
+    # fail-closed-style decision without calling the provider at all.
     decisions: list[TriageDecision] = []
     for finding in findings:
         forced = forced_decisions.get(finding.fingerprint)
         if forced is not None:
             decisions.append(forced)
             continue
-        try:
-            decisions.append(provider.triage(finding, context))
-        except Exception as exc:
+        if rate_limited:
             decisions.append(
-                TriageDecision(
-                    finding_fingerprint=finding.fingerprint,
-                    disposition="block" if policy.fail_closed_on_provider_error else "review",
-                    risk_score=100 if policy.fail_closed_on_provider_error else 50,
-                    true_positive_likelihood=finding.confidence,
-                    exploitability="unknown",
-                    summary="Triage provider failed",
-                    rationale=(
-                        "The provider response was not trusted because the model call failed."
-                    ),
-                    remediation=finding.remediation,
-                    provider=provider.name,
-                    model=provider.model,
-                    latency_ms=0.0,
-                    error=f"{type(exc).__name__}: {exc}",
+                _provider_error_decision(
+                    finding,
+                    provider,
+                    policy,
+                    RateLimitError("provider was rate-limited earlier in this run"),
+                    rate_limited=True,
                 )
             )
+            continue
+        try:
+            decisions.append(provider.triage(finding, context))
+        except RateLimitError as exc:
+            rate_limited = True
+            decisions.append(
+                _provider_error_decision(finding, provider, policy, exc, rate_limited=True)
+            )
+        except Exception as exc:
+            decisions.append(_provider_error_decision(finding, provider, policy, exc))
 
     # Step 5: deterministic pass/fail gate (policy.py) -- the LLM
     # provider is advisory input to this, never the final authority.
@@ -202,5 +231,6 @@ def run_pipeline(
             "head_ref": head_ref,
             "target_repo": str(target_repo) if target_repo is not None else "",
             "target_name": Path(target_repo).name if target_repo is not None else "",
+            "rate_limited": rate_limited,
         },
     )

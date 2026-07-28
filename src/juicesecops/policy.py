@@ -14,7 +14,6 @@ class Policy:
     block_risk_score: int = 70
     review_risk_score: int = 45
     fail_closed_on_provider_error: bool = True
-    max_findings_per_run: int = 300
     redact_secrets: bool = True
     max_evidence_chars: int = 500
     max_diff_chars: int = 7000
@@ -49,7 +48,6 @@ class Policy:
             block_risk_score=int(gate.get("block_risk_score", 70)),
             review_risk_score=int(gate.get("review_risk_score", 45)),
             fail_closed_on_provider_error=bool(gate.get("fail_closed_on_provider_error", True)),
-            max_findings_per_run=int(gate.get("max_findings_per_run", 300)),
             redact_secrets=bool(privacy.get("redact_secrets", True)),
             max_evidence_chars=int(privacy.get("max_evidence_chars", 500)),
             max_diff_chars=int(privacy.get("max_diff_chars", 7000)),

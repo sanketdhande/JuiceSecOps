@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 
 from ._prompted import PromptedLLMProvider
+from .base import RateLimitError
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-20b"
@@ -92,8 +93,10 @@ class GroqSecurityProvider(PromptedLLMProvider):
                 return str(payload["choices"][0]["message"]["content"])
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")
-                last_error = RuntimeError(f"Groq request failed ({exc.code}): {detail}")
-                if exc.code != 429 or attempt == MAX_RETRIES:
+                if exc.code != 429:
+                    raise RuntimeError(f"Groq request failed ({exc.code}): {detail}") from exc
+                last_error = RateLimitError(f"Groq request failed ({exc.code}): {detail}")
+                if attempt == MAX_RETRIES:
                     raise last_error from exc
                 delay = self._retry_delay_seconds(exc, attempt)
                 time.sleep(delay)

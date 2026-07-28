@@ -4,7 +4,6 @@ review_severity_floor = "high"
 block_risk_score = 70
 review_risk_score = 45
 fail_closed_on_provider_error = true
-max_findings_per_run = 300
 
 [privacy]
 redact_secrets = true

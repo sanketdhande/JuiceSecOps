@@ -5,6 +5,19 @@ from typing import Protocol
 from ..models import CodeChange, Finding, TriageDecision
 
 
+class RateLimitError(RuntimeError):
+    """Raised by a provider when the API itself reports a rate limit
+    (HTTP 429) that its own retry/backoff couldn't clear.
+
+    pipeline.py treats this as a distinct signal from other provider
+    failures: on RateLimitError it stops sending further requests to the
+    provider for the rest of the run (there's no point retrying a
+    rate-limited API call by call) and finishes the report with whatever
+    was gathered so far, rather than looping through every remaining
+    change/finding and hitting the same limit again for each one.
+    """
+
+
 class SecurityProvider(Protocol):
     """The "LLM" interface used by pipeline.py.
 

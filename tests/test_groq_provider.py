@@ -5,6 +5,7 @@ import unittest
 import urllib.error
 from unittest import mock
 
+from juicesecops.providers.base import RateLimitError
 from juicesecops.providers.groq import DEFAULT_MODEL, MAX_RETRIES, USER_AGENT, GroqSecurityProvider
 
 
@@ -90,7 +91,7 @@ class RetryTests(unittest.TestCase):
         self.assertEqual(result, "recovered")
         sleep.assert_called_once_with(0.0)
 
-    def test_raises_after_exhausting_retries_on_429(self):
+    def test_raises_rate_limit_error_after_exhausting_retries_on_429(self):
         with mock.patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}, clear=True):
             provider = GroqSecurityProvider()
             with (
@@ -99,7 +100,7 @@ class RetryTests(unittest.TestCase):
                     side_effect=[_http_error_429("0") for _ in range(MAX_RETRIES + 1)],
                 ),
                 mock.patch("time.sleep"),
-                self.assertRaises(RuntimeError),
+                self.assertRaises(RateLimitError),
             ):
                 provider._generate([{"role": "user", "content": "hi"}])
 
@@ -117,9 +118,10 @@ class RetryTests(unittest.TestCase):
             with (
                 mock.patch("urllib.request.urlopen", side_effect=error) as urlopen,
                 mock.patch("time.sleep") as sleep,
-                self.assertRaises(RuntimeError),
+                self.assertRaises(RuntimeError) as ctx,
             ):
                 provider._generate([{"role": "user", "content": "hi"}])
+        self.assertNotIsInstance(ctx.exception, RateLimitError)
         urlopen.assert_called_once()
         sleep.assert_not_called()
 

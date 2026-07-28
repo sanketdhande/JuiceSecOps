@@ -57,8 +57,10 @@ class PromptedLLMProvider(ABC):
             {
                 "role": "system",
                 "content": (
-                    "You are a DevSecOps security triage model. Return JSON only. "
-                    "Assess one finding in a CI/CD pipeline for OWASP Juice Shop."
+                    "You are a DevSecOps security triage model. "
+                    "Assess one finding in a CI/CD pipeline for OWASP Juice Shop. "
+                    "Respond with a single JSON object matching the schema and "
+                    "nothing else -- no prose, no markdown outside the JSON."
                 ),
             },
             {
@@ -110,7 +112,9 @@ class PromptedLLMProvider(ABC):
                 "content": (
                     "You are a secure code reviewer for OWASP Juice Shop. "
                     "Inspect only the provided code change. "
-                    "Return JSON only."
+                    "Respond with a single JSON object matching the schema and "
+                    "nothing else -- no prose, no markdown outside the JSON. "
+                    'If you find no issues, respond with exactly {"findings": []}.'
                 ),
             },
             {

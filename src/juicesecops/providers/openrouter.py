@@ -17,6 +17,7 @@ import os
 from typing import Any
 
 from ._prompted import PromptedLLMProvider
+from .base import RateLimitError
 
 DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
 
@@ -57,10 +58,19 @@ class OpenRouterSecurityProvider(PromptedLLMProvider):
         # The actual model inference call, shared by triage() and
         # review_change() (both inherited from _prompted.PromptedLLMProvider).
         client = self._load_client()
-        response = client.chat.send(
-            model=self.model,
-            messages=messages,
-            max_tokens=self.max_new_tokens,
-            temperature=0,
-        )
+        try:
+            response = client.chat.send(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_new_tokens,
+                temperature=0,
+            )
+        except Exception as exc:
+            # The SDK's own retries (see module docstring) are exhausted by
+            # the time this surfaces, so a 429 here means the rate limit
+            # persisted -- raise RateLimitError so pipeline.py stops sending
+            # further requests for the rest of this run.
+            if getattr(exc, "status_code", None) == 429:
+                raise RateLimitError(str(exc)) from exc
+            raise
         return str(response.choices[0].message.content)

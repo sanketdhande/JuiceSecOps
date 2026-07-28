@@ -5,6 +5,7 @@ import types
 import unittest
 from unittest import mock
 
+from juicesecops.providers.base import RateLimitError
 from juicesecops.providers.openrouter import DEFAULT_MODEL, OpenRouterSecurityProvider
 
 
@@ -76,6 +77,41 @@ class GenerateTests(unittest.TestCase):
                 provider._generate([{"role": "user", "content": "hi again"}])
 
         client_factory.assert_called_once_with(api_key="test-key")
+
+
+class RateLimitTests(unittest.TestCase):
+    def test_generate_raises_rate_limit_error_on_429_status_code(self):
+        # Stands in for the SDK's TooManyRequestsResponseError, which the
+        # SDK itself raises only after exhausting its own internal retries
+        # (see the module docstring) -- any exception with status_code 429
+        # reaching _generate() means the limit persisted.
+        sdk_error = Exception("rate limited")
+        sdk_error.status_code = 429
+        send_mock = mock.MagicMock(side_effect=sdk_error)
+        stub = _stub_openrouter_module(send_mock)
+
+        with mock.patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+            provider = OpenRouterSecurityProvider()
+            with (
+                mock.patch.dict(sys.modules, {"openrouter": stub}),
+                self.assertRaises(RateLimitError),
+            ):
+                provider._generate([{"role": "user", "content": "hi"}])
+
+    def test_generate_reraises_non_429_errors_unchanged(self):
+        sdk_error = Exception("server exploded")
+        sdk_error.status_code = 500
+        send_mock = mock.MagicMock(side_effect=sdk_error)
+        stub = _stub_openrouter_module(send_mock)
+
+        with mock.patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+            provider = OpenRouterSecurityProvider()
+            with (
+                mock.patch.dict(sys.modules, {"openrouter": stub}),
+                self.assertRaises(Exception) as ctx,
+            ):
+                provider._generate([{"role": "user", "content": "hi"}])
+        self.assertIs(ctx.exception, sdk_error)
 
 
 if __name__ == "__main__":
