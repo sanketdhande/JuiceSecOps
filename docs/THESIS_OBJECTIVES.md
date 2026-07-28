@@ -33,7 +33,7 @@ Evaluate the capabilities of Large Language Models for software vulnerability de
 
 Project mapping:
 
-- `providers/huggingface.py` integrates `openai/gpt-oss-20b`.
+- `providers/groq.py` integrates `openai/gpt-oss-120b` via Groq's hosted API, and `providers/openrouter.py` integrates a second model, `meta-llama/llama-3.3-70b-instruct`, via OpenRouter's SDK -- both hosted APIs, no local model weights -- so the same evaluation applies regardless of which model/provider is selected.
 - The model reviews git diffs from Juice Shop and emits structured vulnerability candidates.
 - The same model triages scanner findings to produce risk-oriented explanations.
 - `evaluation.py` splits every report into `traditional` (scanner) and `llm` (diff-review) findings so LLM-originated detections can be compared against the scanner baseline without a separate non-LLM run.
@@ -86,7 +86,7 @@ Project mapping:
 - The orchestration layer is implemented in Python.
 - The CI/CD examples are implemented with GitHub Actions.
 - The traditional security stages use Semgrep, Trivy, and OWASP ZAP.
-- The LLM integration (`openai/gpt-oss-20b` via `providers/huggingface.py`) sits behind the same `SecurityProvider` interface `pipeline.py` calls, keeping the model call swappable without touching orchestration code.
+- The LLM integration (`openai/gpt-oss-120b` via `providers/groq.py`, or `meta-llama/llama-3.3-70b-instruct` via `providers/openrouter.py`) sits behind the same `SecurityProvider` interface `pipeline.py` calls, keeping the model/provider swappable without touching orchestration code.
 
 ### Experimental evaluation
 

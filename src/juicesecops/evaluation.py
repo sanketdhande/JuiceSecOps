@@ -8,7 +8,7 @@ from .models import Finding
 
 
 def finding_source(finding: Finding) -> str:
-    # The provider (huggingface) tags every finding it
+    # Every provider tags every finding it
     # produces with tool="llm-diff" -- that string is the only signal used
     # anywhere in reporting/evaluation to separate "LLM findings" from
     # scanner findings (semgrep/trivy/zap).

@@ -2,13 +2,16 @@
 # Runs the pipeline against the bundled sample scanner reports instead of
 # real Semgrep/Trivy/ZAP output. `--skip-change-review` skips the LLM diff
 # review stage, but provider.triage() is still called once per finding
-# below (see pipeline.py) -- HuggingFaceSecurityProvider (the only
-# provider) loads openai/gpt-oss-20b via transformers to do that, so this
-# needs `pip install -e '.[dev]'` and enough GPU/CPU memory to host the
-# model; it is no longer a lightweight, model-free demo.
+# below (see pipeline.py). Defaults to --provider groq (Groq's hosted API
+# for openai/gpt-oss-120b, providers/groq.py) -- export GROQ_API_KEY first.
+# Pass "openrouter" as the first argument to use OpenRouter's SDK instead
+# (providers/openrouter.py, meta-llama/llama-3.3-70b-instruct by default;
+# needs `pip install -e '.[openrouter,dev]'` and OPENROUTER_API_KEY). Both
+# are hosted APIs -- no model weights ever run on this machine.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROVIDER="${1:-groq}"
 OUTPUT_DIR="${ROOT_DIR}/results/demo"
 TARGET_REPO="${ROOT_DIR}/targets/juice-shop"
 
@@ -23,6 +26,7 @@ PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --input "${ROOT_DIR}/samples/reports/trivy.json" \
   --input "${ROOT_DIR}/samples/reports/zap.json" \
   --ground-truth "${ROOT_DIR}/samples/reports/ground-truth.json" \
+  --provider "${PROVIDER}" \
   --target-repo "${TARGET_REPO}" \
   --skip-change-review \
   --output "${OUTPUT_DIR}" \

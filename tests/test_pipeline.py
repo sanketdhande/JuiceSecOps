@@ -25,8 +25,9 @@ def _run(repo, *args):
 
 
 class FakeProvider:
-    # Deterministic stand-in for HuggingFaceSecurityProvider: exercises
-    # run_pipeline()'s dedup/redaction/gate logic without a real model call.
+    # Deterministic stand-in for a real SecurityProvider (GroqSecurityProvider,
+    # OpenRouterSecurityProvider): exercises run_pipeline()'s
+    # dedup/redaction/gate logic without a real model call.
     name = "fake"
     model = "fake-model"
 
@@ -188,7 +189,7 @@ class PipelineTests(unittest.TestCase):
             schema_version="1.0",
             generated_at="2026-07-23T00:00:00+00:00",
             inputs=[],
-            provider="huggingface",
+            provider="groq",
             findings=[
                 Finding(
                     tool="zap",

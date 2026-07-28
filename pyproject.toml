@@ -5,18 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "juice-shop-llm-devsecops"
 version = "0.1.0"
-description = "Juice Shop DevSecOps thesis prototype with scanner fusion and Hugging Face LLM review"
+description = "Juice Shop DevSecOps thesis prototype with scanner fusion and hosted LLM review (Groq, OpenRouter)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Sanket Vasant Dhande"}]
-dependencies = [
-  "torch>=2.2,<3",
-  "transformers>=4.55,<5",
-  "accelerate>=0.34,<2",
-]
+dependencies = []
 
 [project.optional-dependencies]
+openrouter = [
+  "openrouter>=1.0,<2",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.9,<1",

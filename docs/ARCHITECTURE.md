@@ -40,7 +40,8 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 | `scripts/fetch_juice_shop.sh` | Fetches the target application into `targets/juice-shop/` |
 | `parsers/reports.py` | Normalizes Semgrep, Trivy, ZAP, and generic JSON |
 | `diffing.py` | Extracts changed Juice Shop files from git |
-| `providers/huggingface.py` | `openai/gpt-oss-20b` integration (the only provider) |
+| `providers/groq.py` | `openai/gpt-oss-120b` integration, run via Groq's hosted API (default, used in CI) |
+| `providers/openrouter.py` | `meta-llama/llama-3.3-70b-instruct` integration, run via OpenRouter's SDK |
 | `pipeline.py` | Orchestration for change review, triage, and gating |
 | `policy.py` | Deterministic control layer |
 | `reporting.py` | JSON and Markdown evidence output |
@@ -55,7 +56,7 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 
 ## Evaluation path
 
-Every run compares two buckets of findings from the same experimental condition: `traditional` (Semgrep/Trivy/ZAP) versus `llm` (the `openai/gpt-oss-20b`-assisted diff-review stage, tagged `tool="llm-diff"`). `evaluation.py` exposes this split plus an optional precision comparison against `--ground-truth`, so latency, gate decisions, and contextual-detection gains can be measured without a separate no-model baseline run.
+Every run compares two buckets of findings from the same experimental condition: `traditional` (Semgrep/Trivy/ZAP) versus `llm` (the `openai/gpt-oss-120b`-assisted diff-review stage, tagged `tool="llm-diff"`). `evaluation.py` exposes this split plus an optional precision comparison against `--ground-truth`, so latency, gate decisions, and contextual-detection gains can be measured without a separate no-model baseline run.
 
 The CI workflow also runs local code quality checks and the Python test suite before security scanning so the DevSecOps pipeline covers both software correctness and security analysis.
 

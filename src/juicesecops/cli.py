@@ -11,7 +11,12 @@ from .evaluation import evaluate_precision, summarize_findings
 from .parsers import load_findings
 from .pipeline import run_pipeline
 from .policy import Policy
-from .providers import DEFAULT_MODEL, HuggingFaceSecurityProvider
+from .providers import (
+    GROQ_DEFAULT_MODEL,
+    OPENROUTER_DEFAULT_MODEL,
+    GroqSecurityProvider,
+    OpenRouterSecurityProvider,
+)
 from .reporting import print_report_summary, write_report
 
 
@@ -24,10 +29,18 @@ def _parse_context(values: list[str]) -> dict[str, str]:
     return context
 
 
-def _provider(model_id: str | None):
-    # The only provider: HuggingFaceSecurityProvider, calling
-    # openai/gpt-oss-20b via transformers (providers/huggingface.py).
-    return HuggingFaceSecurityProvider(model=model_id or DEFAULT_MODEL)
+def _provider(name: str, model_id: str | None):
+    # Both providers are hosted APIs -- no model weights ever run on this
+    # machine. "groq" (default) calls Groq's hosted API for
+    # openai/gpt-oss-120b (providers/groq.py) -- requires GROQ_API_KEY.
+    # Every default GitHub Actions workflow passes --provider groq (or
+    # omits it, since that's the default). "openrouter" calls OpenRouter's
+    # official Python SDK instead (providers/openrouter.py), defaulting to
+    # a different model (meta-llama/llama-3.3-70b-instruct) -- requires
+    # OPENROUTER_API_KEY.
+    if name == "openrouter":
+        return OpenRouterSecurityProvider(model=model_id or OPENROUTER_DEFAULT_MODEL)
+    return GroqSecurityProvider(model=model_id or GROQ_DEFAULT_MODEL)
 
 
 def _existing_paths(values: list[str], label: str) -> list[Path]:
@@ -62,9 +75,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Policy TOML file.",
     )
     parser.add_argument(
+        "--provider",
+        choices=["groq", "openrouter"],
+        default="groq",
+        help=(
+            "Security analysis provider (both are hosted APIs -- no model weights run "
+            "locally): 'groq' calls Groq's hosted API (needs GROQ_API_KEY); 'openrouter' "
+            "calls OpenRouter's official SDK instead (needs OPENROUTER_API_KEY)."
+        ),
+    )
+    parser.add_argument(
         "--model-id",
         default=None,
-        help=f"Hugging Face model id to load via transformers. Defaults to {DEFAULT_MODEL}.",
+        help=(
+            f"Model id to use. Defaults to {GROQ_DEFAULT_MODEL} for --provider groq, or "
+            f"{OPENROUTER_DEFAULT_MODEL} for --provider openrouter."
+        ),
     )
     parser.add_argument("--base-ref", help="Base git ref for diff-based analysis.")
     parser.add_argument("--head-ref", default="HEAD", help="Head git ref for diff-based analysis.")
@@ -96,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("at least one existing --input report is required")
 
     policy = Policy.load(args.policy)
-    provider = _provider(args.model_id)
+    provider = _provider(args.provider, args.model_id)
     # Everything downstream (loading scanner findings, diffing the target
     # repo, calling the provider, gating) happens inside run_pipeline()
     # (pipeline.py).

@@ -17,7 +17,7 @@ The implementation focuses on code analysis and vulnerability detection inside C
 1. Analyze existing DevSecOps security testing techniques by combining SAST, dependency scanning, secret detection, and DAST report ingestion.
 2. Evaluate LLM capability for vulnerability detection by reviewing code changes and triaging scanner findings.
 3. Design a DevSecOps pipeline architecture that inserts an LLM-based security analyzer after traditional scanning stages.
-4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and a Hugging Face `openai/gpt-oss-20b` review stage.
+4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and an LLM review stage, run entirely through hosted APIs (Groq for `openai/gpt-oss-120b`, or OpenRouter for `meta-llama/llama-3.3-70b-instruct`) -- no model weights ever run on the local machine.
 5. Support experimental evaluation through repeatable reports and sample inputs.
 
 ## Architecture
@@ -66,61 +66,83 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 - `scripts/fetch_juice_shop.sh`: clones OWASP Juice Shop into `targets/juice-shop` when needed.
 - `config/policy.toml`: deterministic gate and scope controls.
 - `samples/reports/`: synthetic Semgrep, Trivy, and ZAP reports for offline demonstration.
-- `scripts/run_demo.sh`: local demo against the bundled sample reports.
-- `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with a configurable `--model-id`.
+- `scripts/run_demo.sh`: local demo against the bundled sample reports (defaults to `--provider groq`).
+- `scripts/run_juice_shop_pipeline.sh`: full pipeline example for Semgrep, Trivy, ZAP, and `juicesecops` with a configurable `--provider`/`--model-id`.
 - `scripts/fetch_dvwa.sh`, `scripts/run_dvwa_pipeline.sh`, `config/policy-dvwa.toml`: the same set of tooling for the DVWA target -- see [DVWA target](#dvwa-target) below.
 - `.github/workflows/`: split CI workflows for linting, reporting, Semgrep, Trivy, and ZAP stages.
 
-## Hugging Face model integration
+## LLM providers
 
-The only LLM provider in this project ([`HuggingFaceSecurityProvider`](src/juicesecops/providers/huggingface.py)) uses [`openai/gpt-oss-20b`](https://huggingface.co/openai/gpt-oss-20b) exactly as shown on the model card:
+Both providers are hosted APIs -- **no model weights ever run on the local machine or in CI**, and both share the same `triage()`/`review_change()` prompts and JSON parsing (`providers/_prompted.py`), so results stay directly comparable:
 
-```python
-from transformers import pipeline
+| Provider | `--provider` | Model | Runs where | Needs |
+| --- | --- | --- | --- | --- |
+| [`GroqSecurityProvider`](src/juicesecops/providers/groq.py) (default) | `groq` | `openai/gpt-oss-120b` | Groq's hosted, OpenAI-compatible API | `pip install -e '.[dev]'` (stdlib only), a `GROQ_API_KEY` |
+| [`OpenRouterSecurityProvider`](src/juicesecops/providers/openrouter.py) | `openrouter` | `meta-llama/llama-3.3-70b-instruct` | OpenRouter's official Python SDK | `pip install -e '.[openrouter,dev]'`, an `OPENROUTER_API_KEY` |
 
-model_id = "openai/gpt-oss-20b"
+`--model-id` overrides the default for either, so e.g. `--provider openrouter --model-id openai/gpt-oss-120b` works too (any model both providers' respective hosts serve).
 
-pipe = pipeline(
-    "text-generation",
-    model=model_id,
-    torch_dtype="auto",
-    device_map="auto",
-)
+### Hosted: Groq's API
 
-messages = [
-    {"role": "user", "content": "Explain quantum mechanics clearly and concisely."},
-]
+`GroqSecurityProvider` calls Groq's hosted, OpenAI-compatible chat-completions API (`https://api.groq.com/openai/v1/chat/completions`) for `openai/gpt-oss-120b` -- no local weights, no GPU, no download, just an HTTPS call over the standard library (`urllib`). This is the default provider, and the one CI workflows use.
 
-outputs = pipe(
-    messages,
-    max_new_tokens=256,
-)
-print(outputs[0]["generated_text"][-1])
-```
+For this specific model, Groq's free tier is genuinely free: **30 requests/minute and 1,000 requests/day** for `openai/gpt-oss-120b`, no credit card required (per [Groq's rate-limit docs](https://console.groq.com/docs/rate-limits)). OpenRouter has no free variant of this model at all -- `openai/gpt-oss-120b` is paid-only there (~$0.03/$0.17 per 1M input/output tokens); only the smaller `openai/gpt-oss-20b` has an OpenRouter `:free` tier (and even that is capped at 20 requests/minute and 50 requests/day without $10+ of purchased credit).
 
-It uses this model in two ways:
-
-1. Review changed Juice Shop files and emit candidate vulnerabilities as structured JSON.
-2. Triage normalized scanner findings into `block`, `review`, or `accept` decisions.
-
-`torch`/`transformers`/`accelerate` are required dependencies (`pyproject.toml`) -- there is no non-LLM fallback provider, so `pip install -e '.[dev]'` always pulls them in and every `python -m juicesecops` run loads the model.
+Requires `GROQ_API_KEY` in the environment (never pass it as `--model-id` or any other CLI argument -- argv ends up in shell history and CI logs):
 
 ```bash
+export GROQ_API_KEY="gsk_..."
 python -m pip install -e '.[dev]'
-./scripts/fetch_juice_shop.sh
 python -m juicesecops \
   --input samples/reports/semgrep.json \
-  --model-id openai/gpt-oss-20b \
-  --output results/huggingface
+  --provider groq \
+  --output results/groq
 ```
 
-Or use the bundled script, which also runs Semgrep/Trivy/ZAP first:
+Or use the bundled script:
 
 ```bash
-./scripts/run_juice_shop_pipeline.sh targets/juice-shop openai/gpt-oss-20b
+./scripts/run_juice_shop_pipeline.sh targets/juice-shop groq
 ```
 
-`--model-id` accepts any Hugging Face `transformers`-compatible text-generation model id -- pass a smaller checkpoint if a machine can't host the 20B-parameter default.
+### Hosted: OpenRouter's SDK
+
+`OpenRouterSecurityProvider` uses [OpenRouter's official Python SDK](https://pypi.org/project/openrouter/) (the `openrouter` PyPI package, not raw HTTP calls) to call `meta-llama/llama-3.3-70b-instruct` by default:
+
+```python
+from openrouter import OpenRouter
+import os
+
+with OpenRouter(api_key=os.getenv("OPENROUTER_API_KEY")) as client:
+    response = client.chat.send(
+        model="meta-llama/llama-3.3-70b-instruct",
+        messages=[
+            {"role": "user", "content": "Explain quantum computing in one sentence."}
+        ],
+    )
+    print(response.choices[0].message.content)
+```
+
+This is a different model/host than Groq -- useful as a comparison point, or as an alternative if Groq is unavailable. The SDK handles retries for transient failures (429/5xx) itself, so `OpenRouterSecurityProvider` doesn't implement its own backoff loop the way the old raw-`urllib` OpenRouter provider used to.
+
+**Why not run Llama 3.3 70B on Groq instead?** Groq is sunsetting its own `llama-3.3-70b-versatile` on 2026-08-16 (announced 2026-06-17, recommending `openai/gpt-oss-120b` as the replacement -- see [Groq's deprecations page](https://console.groq.com/docs/deprecations)), so it isn't a durable choice there. OpenRouter's hosting of the model is unaffected, since it's an entirely separate provider.
+
+Requires the `openrouter` package (`pip install -e '.[openrouter,dev]'`) and `OPENROUTER_API_KEY` in the environment (never pass it as `--model-id` or any other CLI argument):
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+python -m pip install -e '.[openrouter,dev]'
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider openrouter \
+  --output results/openrouter
+```
+
+Or use the bundled script:
+
+```bash
+./scripts/run_juice_shop_pipeline.sh targets/juice-shop openrouter
+```
 
 ## DVWA target
 
@@ -147,10 +169,10 @@ Juice Shop is a single Node container with no setup step (`docker run bkimminich
 This only sets up the database -- it does not automate DVWA's own login or its per-session "security level" cookie (low/medium/high/impossible), so the ZAP baseline scan runs unauthenticated, the same as Juice Shop's.
 
 ```bash
-./scripts/run_dvwa_pipeline.sh targets/dvwa openai/gpt-oss-20b
+./scripts/run_dvwa_pipeline.sh targets/dvwa groq
 ```
 
-CI: `dvwa-security-report.yml` mirrors `juice-shop-security-report.yml` (runs on push to `main` and `workflow_dispatch`).
+CI: `dvwa-security-report.yml` mirrors `juice-shop-security-report.yml` (runs on push to `main` and `workflow_dispatch`, `--provider groq`).
 
 ## LLM and scanner comparison
 
@@ -209,13 +231,13 @@ python -m pip install -e '.[dev]'
 ./scripts/run_demo.sh
 ```
 
-This writes reports beneath `results/demo/`. Because `torch`/`transformers`/`accelerate` are required dependencies and there is no non-LLM fallback, this loads `openai/gpt-oss-20b` to triage the sample findings -- it needs enough GPU/CPU memory to host the model and is not a lightweight, model-free demo.
+This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-120b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`). Neither provider needs a GPU or downloads any model weights.
 
 `targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and `run_juice_shop_pipeline.sh` pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 
 ## CI/CD behavior
 
-The GitHub Actions workflows (`juice-shop-security-report.yml`, `dvwa-security-report.yml`) run the scanner stages and the `openai/gpt-oss-20b` LLM stage on push to `main` and on `workflow_dispatch`. Standard GitHub-hosted runners have no GPU, so this is a real, CPU-bound ~20B-parameter model load in CI -- expect a slow run, and pass a smaller `--model-id` if it doesn't fit the job's time/memory budget.
+The GitHub Actions workflows (`juice-shop-security-report.yml`, `dvwa-security-report.yml`) run the scanner stages and the `openai/gpt-oss-120b` LLM stage on push to `main` and on `workflow_dispatch`, using `--provider groq` (Groq's hosted API) rather than loading the model locally -- standard GitHub-hosted runners have no GPU, so this avoids that limitation entirely instead of working around it. Both workflows need a **`GROQ_API_KEY` repository secret** (Settings -> Secrets and variables -> Actions -> New repository secret); without it, the `llm-review`/gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__` raises when the key is missing.
 
 The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the target application to be committed into this repository.
 
@@ -223,7 +245,7 @@ The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the t
 
 - The deterministic gate is the final authority. The LLM is advisory but integrated into the decision pipeline.
 - `targets/juice-shop` and `targets/dvwa` are intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
-- The `openai/gpt-oss-20b` model is the only analysis provider; there is no non-LLM fallback for machines without enough GPU/CPU memory to host it.
+- `openai/gpt-oss-120b` (via Groq) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. Both are hosted APIs; there is no local-inference or non-LLM fallback provider.
 - The current prototype is optimized for reproducible thesis experiments rather than production deployment hardening.
 
 ## Further documentation

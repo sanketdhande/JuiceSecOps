@@ -4,13 +4,14 @@
 # src/juicesecops/ via `python -m juicesecops` (entry point:
 # src/juicesecops/__main__.py -> cli.py -> pipeline.py). That step is also
 # where the LLM stage runs: pipeline.py diffs targets/dvwa and hands each
-# changed file to HuggingFaceSecurityProvider (providers/huggingface.py),
-# which loads openai/gpt-oss-20b via transformers. This is a real
-# ~20B-parameter model load on a standard GitHub-hosted runner (no GPU) --
-# expect a slow, CPU-bound run, and raise --model-id to a smaller checkpoint
-# if it doesn't fit in the job's time/memory budget. All findings + the
-# pass/fail gate end up in results/dvwa/report.json and report.md, uploaded
-# as the dvwa-security-report artifact below.
+# changed file to GroqSecurityProvider (providers/groq.py), which calls
+# Groq's hosted, OpenAI-compatible API for openai/gpt-oss-120b -- no model
+# weights are ever loaded locally, and Groq's free tier for this model
+# (30 req/min, 1,000 req/day) is far more headroom than OpenRouter's free
+# tier for the same model. Requires the GROQ_API_KEY repository secret
+# (Settings -> Secrets and variables -> Actions). All findings + the
+# pass/fail gate end up in results/dvwa/report.json and report.md,
+# uploaded as the dvwa-security-report artifact below.
 #
 # Unlike Juice Shop (a single Node container with no setup step), DVWA is a
 # PHP app with a MariaDB backend: it ships its own docker-compose stack
@@ -44,9 +45,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
           python -m pip install semgrep
-        # `.[dev]` pulls in torch/transformers/accelerate too -- they're required
-        # dependencies now that HuggingFaceSecurityProvider is the only
-        # provider (pyproject.toml).
+        # `.[dev]` alone is enough here -- GroqSecurityProvider is a plain
+        # HTTPS call (urllib, stdlib only); no model weights are ever
+        # loaded locally.
 
       - name: Prepare workspace
         run: |
@@ -118,6 +119,8 @@ jobs:
       # LLM diff-review + triage stages (see pipeline.py), then applies the
       # deterministic pass/fail gate (policy.py) ---
       - name: Run thesis security gate
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           if [ -f results/dvwa-ci/zap.json ]; then
             ZAP_INPUT="--input results/dvwa-ci/zap.json"
@@ -135,6 +138,7 @@ jobs:
             --input results/dvwa-ci/semgrep.json \
             --input results/dvwa-ci/trivy.json \
             $ZAP_INPUT \
+            --provider groq \
             --target-repo targets/dvwa \
             --policy config/policy-dvwa.toml \
             --base-ref "$EMPTY_TREE" \
