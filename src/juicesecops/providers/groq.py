@@ -25,6 +25,18 @@ from ._prompted import PromptedLLMProvider
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 
+# Groq's API sits behind Cloudflare, and Cloudflare's "browser integrity
+# check" rejects the default User-Agent urllib.request sends
+# ("Python-urllib/3.x") with a 403 ("error code: 1010") before the request
+# ever reaches Groq -- confirmed on Groq's own community forum
+# (https://community.groq.com/t/cloudflare-blocking-urllib-request-without-user-agent/860).
+# Sending a browser-like User-Agent instead clears that check; this has no
+# bearing on authentication, which is still the Authorization header below.
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
 # Groq's free tier returns 429 under load; retry a handful of times with
 # backoff before surfacing the error, since a single retry after a few
 # seconds usually clears a transient rate limit.
@@ -70,6 +82,7 @@ class GroqSecurityProvider(PromptedLLMProvider):
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": USER_AGENT,
             },
         )
         last_error: RuntimeError | None = None

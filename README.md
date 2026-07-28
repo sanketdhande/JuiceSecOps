@@ -172,7 +172,7 @@ This only sets up the database -- it does not automate DVWA's own login or its p
 ./scripts/run_dvwa_pipeline.sh targets/dvwa groq
 ```
 
-CI: `dvwa-security-report.yml` mirrors `juice-shop-security-report.yml` (runs on push to `main` and `workflow_dispatch`, `--provider groq`).
+CI: `dvwa-security-report.yml` mirrors `juice-shop-security-report.yml` (runs on push to `main` and `workflow_dispatch`, both `--provider groq` and `--provider openrouter` against the same scanner reports -- see [CI/CD behavior](#cicd-behavior) below for the separate API keys each workflow uses).
 
 ## LLM and scanner comparison
 
@@ -237,7 +237,18 @@ This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provid
 
 ## CI/CD behavior
 
-The GitHub Actions workflows (`juice-shop-security-report.yml`, `dvwa-security-report.yml`) run the scanner stages and the `openai/gpt-oss-120b` LLM stage on push to `main` and on `workflow_dispatch`, using `--provider groq` (Groq's hosted API) rather than loading the model locally -- standard GitHub-hosted runners have no GPU, so this avoids that limitation entirely instead of working around it. Both workflows need a **`GROQ_API_KEY` repository secret** (Settings -> Secrets and variables -> Actions -> New repository secret); without it, the `llm-review`/gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__` raises when the key is missing.
+The GitHub Actions workflows (`juice-shop-security-report.yml`, `dvwa-security-report.yml`) run the scanner stages once, then run the LLM stage **twice against the same scanner reports** -- once with `--provider groq` (`openai/gpt-oss-120b`) and once with `--provider openrouter` (`meta-llama/llama-3.3-70b-instruct`) -- on push to `main` and on `workflow_dispatch`. Neither provider loads any model locally, so standard GitHub-hosted runners' lack of a GPU is a non-issue. Each run writes its own report and is uploaded as a separate artifact (`*-security-report` for Groq, `*-security-report-openrouter` for OpenRouter).
+
+The two workflows intentionally use **separate API keys** so the Juice Shop and DVWA runs don't share one account's rate-limit budget:
+
+| Secret | Used by |
+| --- | --- |
+| `GROQ_API_KEY` | `juice-shop-security-report.yml`'s Groq step |
+| `OPENROUTER_API_KEY` | `juice-shop-security-report.yml`'s OpenRouter step |
+| `GROQ_API_KEY2` | `dvwa-security-report.yml`'s Groq step |
+| `OPENROUTER_API_KEY2` | `dvwa-security-report.yml`'s OpenRouter step |
+
+All four are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that step's gate call fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__` raises when the key is missing -- the other provider's step is unaffected, since they're independent steps.
 
 The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the target application to be committed into this repository.
 

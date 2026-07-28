@@ -5,7 +5,7 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from juicesecops.providers.groq import DEFAULT_MODEL, MAX_RETRIES, GroqSecurityProvider
+from juicesecops.providers.groq import DEFAULT_MODEL, MAX_RETRIES, USER_AGENT, GroqSecurityProvider
 
 
 class MissingApiKeyTests(unittest.TestCase):
@@ -39,11 +39,18 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(result, "hello from groq")
         request = urlopen.call_args[0][0]
         self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
+        self.assertEqual(request.get_header("User-agent"), USER_AGENT)
         self.assertEqual(request.full_url, "https://api.groq.com/openai/v1/chat/completions")
         sent_body = json.loads(request.data.decode("utf-8"))
         self.assertEqual(sent_body["model"], DEFAULT_MODEL)
         self.assertEqual(sent_body["messages"], [{"role": "user", "content": "hi"}])
         self.assertIn("max_completion_tokens", sent_body)
+
+    def test_generate_sends_a_non_default_user_agent(self):
+        # Regression test: Groq's API sits behind Cloudflare, which rejects
+        # urllib.request's default "Python-urllib/x.y" User-Agent with a 403
+        # ("error code: 1010") before the request reaches Groq at all.
+        self.assertNotIn("python-urllib", USER_AGENT.lower())
 
 
 def _http_error_429(retry_after: str | None = None) -> urllib.error.HTTPError:

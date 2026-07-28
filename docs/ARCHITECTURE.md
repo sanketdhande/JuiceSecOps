@@ -41,7 +41,7 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 | `parsers/reports.py` | Normalizes Semgrep, Trivy, ZAP, and generic JSON |
 | `diffing.py` | Extracts changed Juice Shop files from git |
 | `providers/groq.py` | `openai/gpt-oss-120b` integration, run via Groq's hosted API (default, used in CI) |
-| `providers/openrouter.py` | `meta-llama/llama-3.3-70b-instruct` integration, run via OpenRouter's SDK |
+| `providers/openrouter.py` | `meta-llama/llama-3.3-70b-instruct` integration, run via OpenRouter's SDK (also used in CI, alongside Groq) |
 | `pipeline.py` | Orchestration for change review, triage, and gating |
 | `policy.py` | Deterministic control layer |
 | `reporting.py` | JSON and Markdown evidence output |
