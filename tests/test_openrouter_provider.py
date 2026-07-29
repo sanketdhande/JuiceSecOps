@@ -63,6 +63,25 @@ class GenerateTests(unittest.TestCase):
             temperature=0,
         )
 
+    def test_generate_uses_explicit_max_tokens_override_when_given(self):
+        # review_change() (via _prompted.py) passes its own larger budget
+        # explicitly; confirm it reaches the SDK call instead of
+        # self.max_new_tokens.
+        send_mock = mock.MagicMock(return_value=_fake_response("hello from openrouter"))
+        stub = _stub_openrouter_module(send_mock)
+
+        with mock.patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+            provider = OpenRouterSecurityProvider()
+            with mock.patch.dict(sys.modules, {"openrouter": stub}):
+                provider._generate([{"role": "user", "content": "hi"}], max_tokens=1536)
+
+        send_mock.assert_called_once_with(
+            model=DEFAULT_MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1536,
+            temperature=0,
+        )
+
     def test_client_is_constructed_once_and_cached_across_calls(self):
         send_mock = mock.MagicMock(return_value=_fake_response("hi"))
         client_factory = mock.MagicMock(side_effect=lambda api_key: mock.MagicMock(

@@ -16,9 +16,11 @@ class FakeProvider(PromptedLLMProvider):
     def __init__(self, response: str) -> None:
         self.response = response
         self.last_messages: list[dict[str, str]] | None = None
+        self.last_max_tokens: int | None = None
 
-    def _generate(self, messages: list[dict[str, str]]) -> str:
+    def _generate(self, messages: list[dict[str, str]], *, max_tokens: int | None = None) -> str:
         self.last_messages = messages
+        self.last_max_tokens = max_tokens
         return self.response
 
 
@@ -44,6 +46,18 @@ class ReviewChangePromptTests(unittest.TestCase):
         provider.review_change(change, {})
         system_message = provider.last_messages[0]["content"]
         self.assertIn('{"findings": []}', system_message)
+
+    def test_review_change_requests_a_larger_token_budget_than_triage(self):
+        # Regression test: review_change()'s schema can hold several
+        # findings with multiple free-text fields each, so it needs much
+        # more room than triage()'s single flat object -- underprovisioning
+        # this caused real responses to be cut off mid-JSON on large diffs
+        # (see PromptedLLMProvider.review_max_tokens).
+        provider = FakeProvider(json.dumps({"findings": []}))
+        change = CodeChange(path="lib/is-windows.ts", status="A", diff="", snippet="")
+        provider.review_change(change, {})
+        self.assertEqual(provider.last_max_tokens, PromptedLLMProvider.review_max_tokens)
+        self.assertGreater(provider.last_max_tokens, 256)
 
 
 class TriagePromptTests(unittest.TestCase):

@@ -45,8 +45,23 @@ class PromptedLLMProvider(ABC):
     name: str
     model: str
 
+    # review_change() must return potentially several findings, each with
+    # several free-text fields (description, evidence, remediation, a cwe
+    # list, a references list) -- a much larger output budget than
+    # triage()'s single flat object needs. Without headroom here, the
+    # model's response gets cut off mid-JSON on anything but a trivial
+    # diff (unterminated string/array), extract_json() can't parse the
+    # fragment, and pipeline.py then reports that as a per-file
+    # "provider.review_error" and (fail-closed) blocks the file -- not
+    # because anything insecure was found, but because the model was never
+    # given room to finish answering. Subclasses may override this (e.g. in
+    # __init__, to make it configurable per instance).
+    review_max_tokens: int = 1536
+
     @abstractmethod
-    def _generate(self, messages: list[dict[str, str]]) -> str: ...
+    def _generate(
+        self, messages: list[dict[str, str]], *, max_tokens: int | None = None
+    ) -> str: ...
 
     def triage(self, finding: Finding, context: dict[str, str]) -> TriageDecision:
         # Prompts the model to score one finding (block/review/accept +
@@ -152,7 +167,7 @@ class PromptedLLMProvider(ABC):
                 ),
             },
         ]
-        payload = extract_json(self._generate(messages))
+        payload = extract_json(self._generate(messages, max_tokens=self.review_max_tokens))
         findings: list[Finding] = []
         for item in payload.get("findings", []):
             mapping = dict(item)

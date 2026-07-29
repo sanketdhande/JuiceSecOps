@@ -31,9 +31,15 @@ class OpenRouterSecurityProvider(PromptedLLMProvider):
 
     name = "openrouter"
 
-    def __init__(self, model: str = DEFAULT_MODEL, max_new_tokens: int = 256) -> None:
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        max_new_tokens: int = 256,
+        review_max_tokens: int = 1536,
+    ) -> None:
         self.model = model
         self.max_new_tokens = max_new_tokens
+        self.review_max_tokens = review_max_tokens
         api_key = os.environ.get("OPENROUTER_API_KEY")
         if not api_key:
             raise RuntimeError(
@@ -54,15 +60,17 @@ class OpenRouterSecurityProvider(PromptedLLMProvider):
         self._client = OpenRouter(api_key=self._api_key)
         return self._client
 
-    def _generate(self, messages: list[dict[str, str]]) -> str:
+    def _generate(self, messages: list[dict[str, str]], *, max_tokens: int | None = None) -> str:
         # The actual model inference call, shared by triage() and
         # review_change() (both inherited from _prompted.PromptedLLMProvider).
+        # review_change() passes its own (larger) max_tokens explicitly;
+        # triage() omits it and gets self.max_new_tokens.
         client = self._load_client()
         try:
             response = client.chat.send(
                 model=self.model,
                 messages=messages,
-                max_tokens=self.max_new_tokens,
+                max_tokens=max_tokens if max_tokens is not None else self.max_new_tokens,
                 temperature=0,
             )
         except Exception as exc:

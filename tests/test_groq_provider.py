@@ -47,6 +47,26 @@ class GenerateTests(unittest.TestCase):
         self.assertEqual(sent_body["messages"], [{"role": "user", "content": "hi"}])
         self.assertIn("max_completion_tokens", sent_body)
 
+    def test_generate_uses_explicit_max_tokens_override_when_given(self):
+        # review_change() (via _prompted.py) passes its own larger budget
+        # explicitly; confirm it reaches the request body as
+        # max_completion_tokens instead of self.max_new_tokens.
+        response_body = json.dumps(
+            {"choices": [{"message": {"content": "hello from groq"}}]}
+        ).encode("utf-8")
+        fake_response = mock.MagicMock()
+        fake_response.read.return_value = response_body
+        fake_response.__enter__.return_value = fake_response
+
+        with mock.patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}, clear=True):
+            provider = GroqSecurityProvider()
+            with mock.patch("urllib.request.urlopen", return_value=fake_response) as urlopen:
+                provider._generate([{"role": "user", "content": "hi"}], max_tokens=1536)
+
+        request = urlopen.call_args[0][0]
+        sent_body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(sent_body["max_completion_tokens"], 1536)
+
     def test_generate_sends_a_non_default_user_agent(self):
         # Regression test: Groq's API sits behind Cloudflare, which rejects
         # urllib.request's default "Python-urllib/x.y" User-Agent with a 403
