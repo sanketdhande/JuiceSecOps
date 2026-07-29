@@ -16,6 +16,10 @@ dependencies = []
 openrouter = [
   "openrouter>=1.0,<2",
 ]
+local = [
+  "llama-cpp-python>=0.3.2,<1",
+  "huggingface_hub>=0.24,<1",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.9,<1",
