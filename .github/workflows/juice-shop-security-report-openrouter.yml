@@ -16,10 +16,7 @@
 name: juice-shop-security-report-openrouter
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  workflow_dispatch
 
 jobs:
   report:

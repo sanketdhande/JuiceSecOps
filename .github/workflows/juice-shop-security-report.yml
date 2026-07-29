@@ -20,10 +20,7 @@
 name: juice-shop-security-report
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  workflow_dispatch
 
 jobs:
   report:

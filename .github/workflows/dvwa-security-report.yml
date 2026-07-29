@@ -30,10 +30,7 @@
 name: dvwa-security-report
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  workflow_dispatch
 
 jobs:
   report:
@@ -128,7 +125,7 @@ jobs:
       # deterministic pass/fail gate (policy.py) ---
       - name: Run thesis security gate
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY2 }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY4 }}
         run: |
           if [ -f results/dvwa-ci/zap.json ]; then
             ZAP_INPUT="--input results/dvwa-ci/zap.json"
