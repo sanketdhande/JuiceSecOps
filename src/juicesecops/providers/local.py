@@ -29,7 +29,7 @@ from typing import Any
 from ._prompted import PromptedLLMProvider
 
 DEFAULT_REPO_ID = "ggml-org/gpt-oss-20b-GGUF"
-DEFAULT_FILENAME = "gpt-oss-20b-mxfp4.gguf"
+DEFAULT_FILENAME = "gpt-oss-20b-MXFP4.gguf"
 DEFAULT_MODEL = f"{DEFAULT_REPO_ID}:{DEFAULT_FILENAME}"
 
 
