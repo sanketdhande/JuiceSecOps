@@ -73,14 +73,15 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 
 ## LLM providers
 
-Both providers are hosted APIs -- **no model weights ever run on the local machine or in CI**, and both share the same `triage()`/`review_change()` prompts and JSON parsing (`providers/_prompted.py`), so results stay directly comparable:
+All three providers are hosted APIs -- **no model weights ever run on the local machine or in CI**, and all three share the same `triage()`/`review_change()` prompts and JSON parsing (`providers/_prompted.py`), so results stay directly comparable:
 
 | Provider | `--provider` | Model | Runs where | Needs |
 | --- | --- | --- | --- | --- |
 | [`GroqSecurityProvider`](src/juicesecops/providers/groq.py) (default) | `groq` | `openai/gpt-oss-20b` | Groq's hosted, OpenAI-compatible API | `pip install -e '.[dev]'` (stdlib only), a `GROQ_API_KEY` |
 | [`OpenRouterSecurityProvider`](src/juicesecops/providers/openrouter.py) | `openrouter` | `meta-llama/llama-3.3-70b-instruct` | OpenRouter's official Python SDK | `pip install -e '.[openrouter,dev]'`, an `OPENROUTER_API_KEY` |
+| [`HuggingFaceSecurityProvider`](src/juicesecops/providers/huggingface.py) | `huggingface` | `openai/gpt-oss-20b` | Hugging Face's hosted Inference Providers router | `pip install -e '.[dev]'` (stdlib only), an `HF_TOKEN` |
 
-`--model-id` overrides the default for either, so e.g. `--provider openrouter --model-id openai/gpt-oss-20b` works too (any model both providers' respective hosts serve).
+`--model-id` overrides the default for any of them, so e.g. `--provider openrouter --model-id openai/gpt-oss-20b` works too (any model each provider's respective host serves).
 
 ### Hosted: Groq's API
 
@@ -144,6 +145,29 @@ Or use the bundled script:
 ./scripts/run_juice_shop_pipeline.sh targets/juice-shop openrouter
 ```
 
+### Hosted: Hugging Face's Inference Providers router
+
+`HuggingFaceSecurityProvider` calls Hugging Face's hosted, OpenAI-compatible Inference Providers router (`https://router.huggingface.co/v1/chat/completions`) for `openai/gpt-oss-20b` -- no local weights, no GPU, no download, just an HTTPS call over the standard library (`urllib`), the same style as `GroqSecurityProvider`. The router fans the request out to whichever backend (Together, Fireworks, Novita, etc.) currently serves the requested model, so it's a different hosted path to the same model Groq serves -- useful as a comparison point.
+
+An earlier `HuggingFaceSecurityProvider` loaded `openai/gpt-oss-20b` in-process via `transformers.pipeline(...)`; that needs a GPU and ~40GB+ of RAM/VRAM and was removed as impractical on a standard GitHub-hosted runner. This provider only needs an `HF_TOKEN` and network access, like the other two.
+
+Requires `HF_TOKEN` in the environment (never pass it as `--model-id` or any other CLI argument -- argv ends up in shell history and CI logs):
+
+```bash
+export HF_TOKEN="hf_..."
+python -m pip install -e '.[dev]'
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider huggingface \
+  --output results/huggingface
+```
+
+Or use the bundled script:
+
+```bash
+./scripts/run_juice_shop_pipeline.sh targets/juice-shop huggingface
+```
+
 ## DVWA target
 
 The pipeline also supports [DVWA (Damn Vulnerable Web Application)](https://github.com/digininja/DVWA) as a second target, alongside Juice Shop. `--target-repo` and `--policy` are already generic in `cli.py`/`pipeline.py`, so no package code changes were needed -- DVWA gets its own fetch script, policy file, pipeline script, and CI workflows mirroring the Juice Shop ones exactly:
@@ -155,6 +179,7 @@ The pipeline also supports [DVWA (Damn Vulnerable Web Application)](https://gith
 | `scripts/run_juice_shop_pipeline.sh` | `scripts/run_dvwa_pipeline.sh` |
 | `.github/workflows/juice-shop-security-report.yml` (Groq) | `.github/workflows/dvwa-security-report.yml` (Groq) |
 | `.github/workflows/juice-shop-security-report-openrouter.yml` | `.github/workflows/dvwa-security-report-openrouter.yml` |
+| `.github/workflows/juice-shop-security-report-huggingface.yml` | `.github/workflows/dvwa-security-report-huggingface.yml` |
 
 `config/policy-dvwa.toml` scopes the LLM diff-review stage to DVWA's PHP layout (`vulnerabilities/`, `hackable/`, `includes/`, `login.php`, `setup.php`, `config/`) instead of Juice Shop's TypeScript one.
 
@@ -173,7 +198,7 @@ This only sets up the database -- it does not automate DVWA's own login or its p
 ./scripts/run_dvwa_pipeline.sh targets/dvwa groq
 ```
 
-CI: `dvwa-security-report.yml`/`dvwa-security-report-openrouter.yml` mirror `juice-shop-security-report.yml`/`juice-shop-security-report-openrouter.yml` (run on push to `main` and `workflow_dispatch`) -- see [CI/CD behavior](#cicd-behavior) below for why there are 4 separate workflows and which API key each one uses.
+CI: `dvwa-security-report.yml`/`dvwa-security-report-openrouter.yml`/`dvwa-security-report-huggingface.yml` mirror `juice-shop-security-report.yml`/`juice-shop-security-report-openrouter.yml`/`juice-shop-security-report-huggingface.yml` (run on push to `main` and `workflow_dispatch`) -- see [CI/CD behavior](#cicd-behavior) below for why there are 6 separate workflows and which API key/token each one uses.
 
 ## LLM and scanner comparison
 
@@ -232,33 +257,37 @@ python -m pip install -e '.[dev]'
 ./scripts/run_demo.sh
 ```
 
-This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-20b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`). Neither provider needs a GPU or downloads any model weights.
+This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-20b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`), or `huggingface` to use Hugging Face's Inference Providers router instead (needs `HF_TOKEN`). None of the three providers needs a GPU or downloads any model weights.
 
 `targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and `run_juice_shop_pipeline.sh` pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 
 ## CI/CD behavior
 
-There are **4 reporting workflows**, one per target/provider combination, each fully self-contained (its own Semgrep/Trivy/ZAP scan, not shared with its sibling):
+There are **6 reporting workflows**, one per target/provider combination, each fully self-contained (its own Semgrep/Trivy/ZAP scan, not shared with its siblings):
 
 | Workflow | Target | Provider | Model |
 | --- | --- | --- | --- |
 | `juice-shop-security-report.yml` | Juice Shop | Groq | `openai/gpt-oss-20b` |
 | `juice-shop-security-report-openrouter.yml` | Juice Shop | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
+| `juice-shop-security-report-huggingface.yml` | Juice Shop | Hugging Face | `openai/gpt-oss-20b` |
 | `dvwa-security-report.yml` | DVWA | Groq | `openai/gpt-oss-20b` |
 | `dvwa-security-report-openrouter.yml` | DVWA | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
+| `dvwa-security-report-huggingface.yml` | DVWA | Hugging Face | `openai/gpt-oss-20b` |
 
-They're separate workflow files rather than multiple steps in one workflow so the Groq and OpenRouter runs are **independent GitHub Actions jobs that run in parallel** instead of one job doing two sequential passes (which roughly doubled wall-clock time when they were combined). Neither provider loads any model locally, so standard GitHub-hosted runners' lack of a GPU is a non-issue. Each workflow runs on push to `main` and on `workflow_dispatch`, and uploads its own artifact (`juice-shop-security-report`, `juice-shop-security-report-openrouter`, `dvwa-security-report`, `dvwa-security-report-openrouter`).
+They're separate workflow files rather than multiple steps in one workflow so the Groq, OpenRouter, and Hugging Face runs are **independent GitHub Actions jobs that run in parallel** instead of one job doing three sequential passes (which roughly doubled wall-clock time when Groq and OpenRouter were combined). None of the providers loads any model locally, so standard GitHub-hosted runners' lack of a GPU is a non-issue. Each workflow runs on push to `main` and on `workflow_dispatch`, and uploads its own artifact (`juice-shop-security-report`, `juice-shop-security-report-openrouter`, `juice-shop-security-report-huggingface`, `dvwa-security-report`, `dvwa-security-report-openrouter`, `dvwa-security-report-huggingface`).
 
-The Juice Shop and DVWA workflows intentionally use **separate API keys** so the two targets don't share one account's rate-limit budget:
+The Juice Shop and DVWA workflows intentionally use **separate API keys/tokens** so the two targets don't share one account's rate-limit budget:
 
 | Secret | Used by |
 | --- | --- |
 | `GROQ_API_KEY` | `juice-shop-security-report.yml` |
 | `OPENROUTER_API_KEY` | `juice-shop-security-report-openrouter.yml` |
+| `HF_TOKEN` | `juice-shop-security-report-huggingface.yml` |
 | `GROQ_API_KEY2` | `dvwa-security-report.yml` |
 | `OPENROUTER_API_KEY2` | `dvwa-security-report-openrouter.yml` |
+| `HF_TOKEN2` | `dvwa-security-report-huggingface.yml` |
 
-All four are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that workflow's gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__` raises when the key is missing -- the other three workflows are unaffected, since they're independent runs.
+All six are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that workflow's gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__`/`HuggingFaceSecurityProvider.__init__` raises when the key is missing -- the other workflows are unaffected, since they're independent runs.
 
 The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the target application to be committed into this repository.
 
@@ -266,7 +295,7 @@ The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the t
 
 - The deterministic gate is the final authority. The LLM is advisory but integrated into the decision pipeline.
 - `targets/juice-shop` and `targets/dvwa` are intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
-- `openai/gpt-oss-20b` (via Groq) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. Both are hosted APIs; there is no local-inference or non-LLM fallback provider.
+- `openai/gpt-oss-20b` (via Groq, and also via Hugging Face's Inference Providers router) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. All three are hosted APIs; there is no local-inference or non-LLM fallback provider.
 - The current prototype is optimized for reproducible thesis experiments rather than production deployment hardening.
 
 ## Further documentation

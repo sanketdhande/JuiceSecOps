@@ -21,7 +21,7 @@ class RateLimitError(RuntimeError):
 class SecurityProvider(Protocol):
     """The "LLM" interface used by pipeline.py.
 
-    Two concrete implementations exist. Both are hosted APIs -- no model
+    Three concrete implementations exist. All are hosted APIs -- no model
     weights are ever loaded or run on this machine:
     - GroqSecurityProvider (groq.py): calls Groq's hosted, OpenAI-compatible
       chat-completions API for `openai/gpt-oss-20b`. No GPU or download
@@ -31,10 +31,14 @@ class SecurityProvider(Protocol):
       Python SDK, defaulting to `meta-llama/llama-3.3-70b-instruct` -- a
       different model/host than Groq, useful as a comparison point or an
       alternative if Groq is unavailable. Requires an OPENROUTER_API_KEY.
+    - HuggingFaceSecurityProvider (huggingface.py): calls Hugging Face's
+      Inference Providers router, also defaulting to `openai/gpt-oss-20b`
+      but through a different hosted backend than Groq. Requires an
+      HF_TOKEN.
 
-    Both share their triage()/review_change() prompts and JSON parsing via
-    _prompted.PromptedLLMProvider, so results are directly comparable across
-    models/backends. Any other object with the same `name`/`model`
+    All three share their triage()/review_change() prompts and JSON parsing
+    via _prompted.PromptedLLMProvider, so results are directly comparable
+    across models/backends. Any other object with the same `name`/`model`
     attributes and `triage()`/`review_change()` methods is interchangeable
     from pipeline.py's point of view (tests use this to stub out the model
     call); it just calls review_change() then triage() on whichever one was

@@ -13,8 +13,10 @@ from .pipeline import run_pipeline
 from .policy import Policy
 from .providers import (
     GROQ_DEFAULT_MODEL,
+    HUGGINGFACE_DEFAULT_MODEL,
     OPENROUTER_DEFAULT_MODEL,
     GroqSecurityProvider,
+    HuggingFaceSecurityProvider,
     OpenRouterSecurityProvider,
 )
 from .reporting import print_report_summary, write_report
@@ -30,16 +32,20 @@ def _parse_context(values: list[str]) -> dict[str, str]:
 
 
 def _provider(name: str, model_id: str | None):
-    # Both providers are hosted APIs -- no model weights ever run on this
-    # machine. "groq" (default) calls Groq's hosted API for
+    # All three providers are hosted APIs -- no model weights ever run on
+    # this machine. "groq" (default) calls Groq's hosted API for
     # openai/gpt-oss-20b (providers/groq.py) -- requires GROQ_API_KEY.
     # Every default GitHub Actions workflow passes --provider groq (or
     # omits it, since that's the default). "openrouter" calls OpenRouter's
     # official Python SDK instead (providers/openrouter.py), defaulting to
     # a different model (meta-llama/llama-3.3-70b-instruct) -- requires
-    # OPENROUTER_API_KEY.
+    # OPENROUTER_API_KEY. "huggingface" calls Hugging Face's Inference
+    # Providers router instead (providers/huggingface.py), also defaulting
+    # to openai/gpt-oss-20b -- requires HF_TOKEN.
     if name == "openrouter":
         return OpenRouterSecurityProvider(model=model_id or OPENROUTER_DEFAULT_MODEL)
+    if name == "huggingface":
+        return HuggingFaceSecurityProvider(model=model_id or HUGGINGFACE_DEFAULT_MODEL)
     return GroqSecurityProvider(model=model_id or GROQ_DEFAULT_MODEL)
 
 
@@ -76,20 +82,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["groq", "openrouter"],
+        choices=["groq", "openrouter", "huggingface"],
         default="groq",
         help=(
-            "Security analysis provider (both are hosted APIs -- no model weights run "
+            "Security analysis provider (all are hosted APIs -- no model weights run "
             "locally): 'groq' calls Groq's hosted API (needs GROQ_API_KEY); 'openrouter' "
-            "calls OpenRouter's official SDK instead (needs OPENROUTER_API_KEY)."
+            "calls OpenRouter's official SDK instead (needs OPENROUTER_API_KEY); "
+            "'huggingface' calls Hugging Face's Inference Providers router instead "
+            "(needs HF_TOKEN)."
         ),
     )
     parser.add_argument(
         "--model-id",
         default=None,
         help=(
-            f"Model id to use. Defaults to {GROQ_DEFAULT_MODEL} for --provider groq, or "
-            f"{OPENROUTER_DEFAULT_MODEL} for --provider openrouter."
+            f"Model id to use. Defaults to {GROQ_DEFAULT_MODEL} for --provider groq, "
+            f"{OPENROUTER_DEFAULT_MODEL} for --provider openrouter, or "
+            f"{HUGGINGFACE_DEFAULT_MODEL} for --provider huggingface."
         ),
     )
     parser.add_argument("--base-ref", help="Base git ref for diff-based analysis.")
