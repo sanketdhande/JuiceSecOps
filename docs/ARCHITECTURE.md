@@ -40,6 +40,7 @@ The local helper script fetches a fresh shallow checkout into `targets/juice-sho
 | `scripts/fetch_juice_shop.sh` | Fetches the target application into `targets/juice-shop/` |
 | `parsers/reports.py` | Normalizes Semgrep, Trivy, ZAP, and generic JSON |
 | `diffing.py` | Extracts changed Juice Shop files from git |
+| `providers/openai.py` | `gpt-5.6-luna` integration via OpenAI's Responses API |
 | `providers/groq.py` | `openai/gpt-oss-20b` integration, run via Groq's hosted API (default, used in CI) |
 | `providers/openrouter.py` | `meta-llama/llama-3.3-70b-instruct` integration, run via OpenRouter's SDK (also used in CI, alongside Groq) |
 | `pipeline.py` | Orchestration for change review, triage, and gating |

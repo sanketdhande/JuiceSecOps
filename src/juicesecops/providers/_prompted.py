@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-# Shared triage()/review_change() implementation for any provider that talks
-# to a chat-style LLM (system + user messages in, JSON text out).
-# GroqSecurityProvider (groq.py) and OpenRouterSecurityProvider
-# (openrouter.py) both subclass this -- they only implement
-# _generate(messages) -> raw model text, so every hosted-API backend asks
-# the same questions and gets parsed/scored the same way.
+# Shared triage()/review_change() implementation for any provider that
+# talks to a chat-style LLM (system + user messages in, JSON text out).
+# OpenAI/Groq/OpenRouter/Hugging Face/Local providers all subclass this --
+# they only implement _generate(messages) -> raw model text, so every
+# backend asks the same questions and gets parsed/scored the same way.
 import json
 import re
 import time

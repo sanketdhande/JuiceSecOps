@@ -4,10 +4,13 @@
 # review stage, but provider.triage() is still called once per finding
 # below (see pipeline.py). Defaults to --provider groq (Groq's hosted API
 # for openai/gpt-oss-20b, providers/groq.py) -- export GROQ_API_KEY first.
-# Pass "openrouter" as the first argument to use OpenRouter's SDK instead
-# (providers/openrouter.py, meta-llama/llama-3.3-70b-instruct by default;
-# needs `pip install -e '.[openrouter,dev]'` and OPENROUTER_API_KEY). Both
-# are hosted APIs -- no model weights ever run on this machine.
+# Pass "openai" as the first argument to use OpenAI's SDK instead
+# (providers/openai.py, gpt-5.6-luna by default; needs
+# `pip install -e '.[openai,dev]'` and OPENAI_API_KEY), or "openrouter" to
+# use OpenRouter's SDK instead (providers/openrouter.py,
+# meta-llama/llama-3.3-70b-instruct by default; needs
+# `pip install -e '.[openrouter,dev]'` and OPENROUTER_API_KEY). The hosted
+# providers never run model weights on this machine.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

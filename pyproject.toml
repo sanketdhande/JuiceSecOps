@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "juice-shop-llm-devsecops"
 version = "0.1.0"
-description = "Juice Shop DevSecOps thesis prototype with scanner fusion and hosted LLM review (Groq, OpenRouter)"
+description = "Juice Shop DevSecOps thesis prototype with scanner fusion and hosted LLM review (OpenAI, Groq, OpenRouter)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -13,6 +13,9 @@ authors = [{name = "Sanket Vasant Dhande"}]
 dependencies = []
 
 [project.optional-dependencies]
+openai = [
+  "openai>=1,<2",
+]
 openrouter = [
   "openrouter>=1.0,<2",
 ]

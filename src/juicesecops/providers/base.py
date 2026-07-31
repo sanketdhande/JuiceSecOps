@@ -21,7 +21,10 @@ class RateLimitError(RuntimeError):
 class SecurityProvider(Protocol):
     """The "LLM" interface used by pipeline.py.
 
-    Four concrete implementations exist:
+    Five concrete implementations exist:
+    - OpenAISecurityProvider (openai.py): calls OpenAI's official Python
+      SDK against the Responses API for `gpt-5.6-luna` by default. Requires
+      an OPENAI_API_KEY and network access.
     - GroqSecurityProvider (groq.py): calls Groq's hosted, OpenAI-compatible
       chat-completions API for `openai/gpt-oss-20b`. No GPU or download
       needed, but requires a GROQ_API_KEY and network access. This is what
@@ -41,7 +44,7 @@ class SecurityProvider(Protocol):
       once hosted-API quota/credits run out. The other three are hosted
       APIs where no model weights are ever loaded or run on this machine.
 
-    All four share their triage()/review_change() prompts and JSON parsing
+    All five share their triage()/review_change() prompts and JSON parsing
     via _prompted.PromptedLLMProvider, so results are directly comparable
     across models/backends. Any other object with the same `name`/`model`
     attributes and `triage()`/`review_change()` methods is interchangeable

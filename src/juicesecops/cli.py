@@ -15,10 +15,12 @@ from .providers import (
     GROQ_DEFAULT_MODEL,
     HUGGINGFACE_DEFAULT_MODEL,
     LOCAL_DEFAULT_MODEL,
+    OPENAI_DEFAULT_MODEL,
     OPENROUTER_DEFAULT_MODEL,
     GroqSecurityProvider,
     HuggingFaceSecurityProvider,
     LocalSecurityProvider,
+    OpenAISecurityProvider,
     OpenRouterSecurityProvider,
 )
 from .reporting import print_report_summary, write_report
@@ -34,20 +36,24 @@ def _parse_context(values: list[str]) -> dict[str, str]:
 
 
 def _provider(name: str, model_id: str | None):
-    # "groq" (default), "openrouter", and "huggingface" are hosted APIs --
-    # no model weights ever run on this machine, but each needs its own
-    # account/credit: "groq" calls Groq's hosted API for openai/gpt-oss-20b
+    # "openai", "groq" (default), "openrouter", and "huggingface" are
+    # hosted APIs -- no model weights ever run on this machine, but each
+    # needs its own key/account. "openai" calls OpenAI's Responses API for
+    # gpt-5.6-luna by default (providers/openai.py) -- requires
+    # OPENAI_API_KEY. "groq" calls Groq's hosted API for openai/gpt-oss-20b
     # (providers/groq.py) -- requires GROQ_API_KEY. Every default GitHub
-    # Actions workflow passes --provider groq (or omits it, since that's the
-    # default). "openrouter" calls OpenRouter's official Python SDK instead
-    # (providers/openrouter.py), defaulting to a different model
-    # (meta-llama/llama-3.3-70b-instruct) -- requires OPENROUTER_API_KEY.
-    # "huggingface" calls Hugging Face's Inference Providers router instead
-    # (providers/huggingface.py), also defaulting to openai/gpt-oss-20b --
-    # requires HF_TOKEN. "local" instead runs a quantized GGUF build of
-    # openai/gpt-oss-20b in-process via llama.cpp (providers/local.py) --
-    # no API key/credit needed, only CPU/RAM/disk, since it's meant as a
-    # fallback once hosted-API quota/credits run out.
+    # Actions workflow still passes --provider groq (or omits it, since
+    # that's the current default). "openrouter" calls OpenRouter's official
+    # Python SDK instead (providers/openrouter.py), defaulting to a
+    # different model (meta-llama/llama-3.3-70b-instruct) -- requires
+    # OPENROUTER_API_KEY. "huggingface" calls Hugging Face's Inference
+    # Providers router instead (providers/huggingface.py), also defaulting
+    # to openai/gpt-oss-20b -- requires HF_TOKEN. "local" instead runs a
+    # quantized GGUF build of openai/gpt-oss-20b in-process via llama.cpp
+    # (providers/local.py) -- no API key/credit needed, only CPU/RAM/disk,
+    # since it's meant as a fallback once hosted-API quota/credits run out.
+    if name == "openai":
+        return OpenAISecurityProvider(model=model_id or OPENAI_DEFAULT_MODEL)
     if name == "openrouter":
         return OpenRouterSecurityProvider(model=model_id or OPENROUTER_DEFAULT_MODEL)
     if name == "huggingface":
@@ -90,14 +96,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=["groq", "openrouter", "huggingface", "local"],
+        choices=["groq", "openai", "openrouter", "huggingface", "local"],
         default="groq",
         help=(
             "Security analysis provider: 'groq' calls Groq's hosted API (needs "
-            "GROQ_API_KEY); 'openrouter' calls OpenRouter's official SDK instead (needs "
-            "OPENROUTER_API_KEY); 'huggingface' calls Hugging Face's Inference Providers "
-            "router instead (needs HF_TOKEN); 'local' runs a quantized GGUF build "
-            "in-process via llama.cpp instead -- no API key/credit needed, only CPU/RAM."
+            "GROQ_API_KEY); 'openai' calls OpenAI's Responses API for ChatGPT/API "
+            "models like gpt-5.6-luna (needs OPENAI_API_KEY); 'openrouter' calls "
+            "OpenRouter's official SDK instead (needs OPENROUTER_API_KEY); "
+            "'huggingface' calls Hugging Face's Inference Providers router instead "
+            "(needs HF_TOKEN); 'local' runs a quantized GGUF build in-process via "
+            "llama.cpp instead -- no API key/credit needed, only CPU/RAM."
         ),
     )
     parser.add_argument(
@@ -105,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             f"Model id to use. Defaults to {GROQ_DEFAULT_MODEL} for --provider groq, "
+            f"{OPENAI_DEFAULT_MODEL} for --provider openai, "
             f"{OPENROUTER_DEFAULT_MODEL} for --provider openrouter, "
             f"{HUGGINGFACE_DEFAULT_MODEL} for --provider huggingface, or "
             f"{LOCAL_DEFAULT_MODEL} for --provider local."

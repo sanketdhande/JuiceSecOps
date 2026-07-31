@@ -17,7 +17,7 @@ The implementation focuses on code analysis and vulnerability detection inside C
 1. Analyze existing DevSecOps security testing techniques by combining SAST, dependency scanning, secret detection, and DAST report ingestion.
 2. Evaluate LLM capability for vulnerability detection by reviewing code changes and triaging scanner findings.
 3. Design a DevSecOps pipeline architecture that inserts an LLM-based security analyzer after traditional scanning stages.
-4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and an LLM review stage, run entirely through hosted APIs (Groq for `openai/gpt-oss-20b`, or OpenRouter for `meta-llama/llama-3.3-70b-instruct`) -- no model weights ever run on the local machine.
+4. Implement a prototype that integrates Semgrep, Trivy, OWASP ZAP, and an LLM review stage, run entirely through hosted APIs (OpenAI for `gpt-5.6-luna`, Groq for `openai/gpt-oss-20b`, or OpenRouter for `meta-llama/llama-3.3-70b-instruct`) -- no model weights ever run on the local machine.
 5. Support experimental evaluation through repeatable reports and sample inputs.
 
 ## Architecture
@@ -73,16 +73,40 @@ The implementation exposes comparable scanner findings, LLM-generated findings, 
 
 ## LLM providers
 
-The first three providers are hosted APIs -- **no model weights ever run on the local machine or in CI** for them -- and all four share the same `triage()`/`review_change()` prompts and JSON parsing (`providers/_prompted.py`), so results stay directly comparable:
+The first four providers are hosted APIs -- **no model weights ever run on the local machine or in CI** for them -- and all five share the same `triage()`/`review_change()` prompts and JSON parsing (`providers/_prompted.py`), so results stay directly comparable:
 
 | Provider | `--provider` | Model | Runs where | Needs |
 | --- | --- | --- | --- | --- |
 | [`GroqSecurityProvider`](src/juicesecops/providers/groq.py) (default) | `groq` | `openai/gpt-oss-20b` | Groq's hosted, OpenAI-compatible API | `pip install -e '.[dev]'` (stdlib only), a `GROQ_API_KEY` |
+| [`OpenAISecurityProvider`](src/juicesecops/providers/openai.py) | `openai` | `gpt-5.6-luna` | OpenAI's Responses API via the official Python SDK | `pip install -e '.[openai,dev]'`, an `OPENAI_API_KEY` |
 | [`OpenRouterSecurityProvider`](src/juicesecops/providers/openrouter.py) | `openrouter` | `meta-llama/llama-3.3-70b-instruct` | OpenRouter's official Python SDK | `pip install -e '.[openrouter,dev]'`, an `OPENROUTER_API_KEY` |
 | [`HuggingFaceSecurityProvider`](src/juicesecops/providers/huggingface.py) | `huggingface` | `openai/gpt-oss-20b` | Hugging Face's hosted Inference Providers router | `pip install -e '.[dev]'` (stdlib only), an `HF_TOKEN` |
 | [`LocalSecurityProvider`](src/juicesecops/providers/local.py) | `local` | `openai/gpt-oss-20b` (quantized GGUF) | In-process via llama.cpp, CPU only | `pip install -e '.[local,dev]'`, no API key -- just CPU/RAM/disk |
 
-`--model-id` overrides the default for any of them, so e.g. `--provider openrouter --model-id openai/gpt-oss-20b` works too (any model each provider's respective host serves).
+`--model-id` overrides the default for any of them, so e.g. `--provider openai --model-id chat-latest` or `--provider openrouter --model-id openai/gpt-oss-20b` works too (any model each provider's respective host serves).
+
+### Hosted: OpenAI's Responses API
+
+`OpenAISecurityProvider` uses [OpenAI's official Python SDK](https://pypi.org/project/openai/) to call the Responses API, defaulting to `gpt-5.6-luna`. That gives this project a direct OpenAI-hosted path to current ChatGPT/API models while preserving the same prompt and JSON-parsing layer the other providers use.
+
+As of **July 31, 2026**, OpenAI's model docs list `gpt-5.6-luna` as the GPT-5.6 family variant optimized for cost-sensitive, high-volume workloads, and they note that `chat-latest` points to the latest Instant model used in ChatGPT while recommending GPT-5.6 for production API use.
+
+Requires the `openai` package (`pip install -e '.[openai,dev]'`) and `OPENAI_API_KEY` in the environment (never pass it as `--model-id` or any other CLI argument):
+
+```bash
+export OPENAI_API_KEY="sk-..."
+python -m pip install -e '.[openai,dev]'
+python -m juicesecops \
+  --input samples/reports/semgrep.json \
+  --provider openai \
+  --output results/openai
+```
+
+Or use the bundled script:
+
+```bash
+./scripts/run_juice_shop_pipeline.sh targets/juice-shop openai
+```
 
 ### Hosted: Groq's API
 
@@ -224,7 +248,7 @@ This only sets up the database -- it does not automate DVWA's own login or its p
 ./scripts/run_dvwa_pipeline.sh targets/dvwa groq
 ```
 
-CI: `dvwa-security-report.yml`/`dvwa-security-report-openrouter.yml`/`dvwa-security-report-huggingface.yml`/`dvwa-security-report-local.yml` mirror `juice-shop-security-report.yml`/`juice-shop-security-report-openrouter.yml`/`juice-shop-security-report-huggingface.yml`/`juice-shop-security-report-local.yml` (run on `workflow_dispatch`) -- see [CI/CD behavior](#cicd-behavior) below for why there are 8 separate workflows and which API key/token each one uses.
+CI: `dvwa-security-report.yml`/`dvwa-security-report-openai.yml`/`dvwa-security-report-openrouter.yml`/`dvwa-security-report-huggingface.yml`/`dvwa-security-report-local.yml` mirror `juice-shop-security-report.yml`/`juice-shop-security-report-openai.yml`/`juice-shop-security-report-openrouter.yml`/`juice-shop-security-report-huggingface.yml`/`juice-shop-security-report-local.yml` (run on `workflow_dispatch`) -- see [CI/CD behavior](#cicd-behavior) below for why there are 10 separate workflows and which API key/token each one uses.
 
 ## LLM and scanner comparison
 
@@ -283,41 +307,45 @@ python -m pip install -e '.[dev]'
 ./scripts/run_demo.sh
 ```
 
-This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-20b` (export `GROQ_API_KEY` first) -- pass `openrouter` as the first argument to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`), `huggingface` to use Hugging Face's Inference Providers router instead (needs `HF_TOKEN`), or `local` to run a quantized GGUF build via llama.cpp instead (needs `pip install -e '.[local,dev]'`, no API key, CPU only). None of the hosted providers needs a GPU or downloads any model weights; `local` is the exception -- it downloads and runs the GGUF file itself.
+This writes reports beneath `results/demo/`. `run_demo.sh` defaults to `--provider groq`, so triaging the sample findings calls Groq's hosted API for `openai/gpt-oss-20b` (export `GROQ_API_KEY` first) -- pass `openai` as the first argument to use OpenAI's SDK instead (needs `pip install -e '.[openai,dev]'` and `OPENAI_API_KEY`), `openrouter` to use OpenRouter's SDK instead (needs `pip install -e '.[openrouter,dev]'` and `OPENROUTER_API_KEY`), `huggingface` to use Hugging Face's Inference Providers router instead (needs `HF_TOKEN`), or `local` to run a quantized GGUF build via llama.cpp instead (needs `pip install -e '.[local,dev]'`, no API key, CPU only). None of the hosted providers needs a GPU or downloads any model weights; `local` is the exception -- it downloads and runs the GGUF file itself.
 
 `targets/juice-shop` is a fresh, unmodified clone, so a plain `git diff HEAD` between its working tree and `HEAD` is always empty and the LLM change-review stage would find nothing to review. To avoid that, the CI workflow and `run_juice_shop_pipeline.sh` pass `--base-ref` set to git's well-known empty-tree object (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`) together with `--head-ref HEAD`. That makes every in-scope file look "added", so the provider reviews a one-time baseline scan of the checkout instead of a real diff. `max_changed_files` and the priority order of `include_paths` in `config/policy.toml` control which files are spent from that budget first (backend `lib/`, `models/`, `routes/` before `frontend/src/`, which is much larger). If you instead want the LLM to inspect a real code change, edit files inside `targets/juice-shop/` first, or pass `--base-ref`/`--head-ref` from an actual branch comparison, and drop the empty-tree flags.
 
 ## CI/CD behavior
 
-There are **8 reporting workflows**, one per target/provider combination, each fully self-contained (its own Semgrep/Trivy/ZAP scan, not shared with its siblings):
+There are **10 reporting workflows**, one per target/provider combination, each fully self-contained (its own Semgrep/Trivy/ZAP scan, not shared with its siblings):
 
 | Workflow | Target | Provider | Model |
 | --- | --- | --- | --- |
 | `juice-shop-security-report.yml` | Juice Shop | Groq | `openai/gpt-oss-20b` |
+| `juice-shop-security-report-openai.yml` | Juice Shop | OpenAI | `gpt-5.6-luna` |
 | `juice-shop-security-report-openrouter.yml` | Juice Shop | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
 | `juice-shop-security-report-huggingface.yml` | Juice Shop | Hugging Face | `openai/gpt-oss-20b` |
 | `juice-shop-security-report-local.yml` | Juice Shop | Local (llama.cpp) | `openai/gpt-oss-20b` (GGUF) |
 | `dvwa-security-report.yml` | DVWA | Groq | `openai/gpt-oss-20b` |
+| `dvwa-security-report-openai.yml` | DVWA | OpenAI | `gpt-5.6-luna` |
 | `dvwa-security-report-openrouter.yml` | DVWA | OpenRouter | `meta-llama/llama-3.3-70b-instruct` |
 | `dvwa-security-report-huggingface.yml` | DVWA | Hugging Face | `openai/gpt-oss-20b` |
 | `dvwa-security-report-local.yml` | DVWA | Local (llama.cpp) | `openai/gpt-oss-20b` (GGUF) |
 
-They're separate workflow files rather than multiple steps in one workflow so the Groq, OpenRouter, Hugging Face, and local runs are **independent GitHub Actions jobs that run in parallel** instead of one job doing every pass sequentially (which roughly doubled wall-clock time when just Groq and OpenRouter were combined). Only the "local" workflows load a model on the runner itself (a quantized GGUF build, CPU-only, via llama.cpp) -- the other three are hosted APIs, so standard GitHub-hosted runners' lack of a GPU is a non-issue for them. Each workflow runs on `workflow_dispatch`, and uploads its own artifact (`juice-shop-security-report`, `juice-shop-security-report-openrouter`, `juice-shop-security-report-huggingface`, `juice-shop-security-report-local`, `dvwa-security-report`, `dvwa-security-report-openrouter`, `dvwa-security-report-huggingface`, `dvwa-security-report-local`).
+They're separate workflow files rather than multiple steps in one workflow so the OpenAI, Groq, OpenRouter, Hugging Face, and local runs are **independent GitHub Actions jobs that run in parallel** instead of one job doing every pass sequentially. Only the "local" workflows load a model on the runner itself (a quantized GGUF build, CPU-only, via llama.cpp) -- the other four are hosted APIs, so standard GitHub-hosted runners' lack of a GPU is a non-issue for them. Each workflow runs on `workflow_dispatch`, and uploads its own artifact (`juice-shop-security-report`, `juice-shop-security-report-openai`, `juice-shop-security-report-openrouter`, `juice-shop-security-report-huggingface`, `juice-shop-security-report-local`, `dvwa-security-report`, `dvwa-security-report-openai`, `dvwa-security-report-openrouter`, `dvwa-security-report-huggingface`, `dvwa-security-report-local`).
 
 The Juice Shop and DVWA workflows intentionally use **separate API keys/tokens** so the two targets don't share one account's rate-limit budget. The "local" workflows need no secret at all:
 
 | Secret | Used by |
 | --- | --- |
 | `GROQ_API_KEY` | `juice-shop-security-report.yml` |
+| `OPENAI_API_KEY` | `juice-shop-security-report-openai.yml` |
 | `OPENROUTER_API_KEY` | `juice-shop-security-report-openrouter.yml` |
 | `HF_TOKEN` | `juice-shop-security-report-huggingface.yml` |
 | _(none)_ | `juice-shop-security-report-local.yml` |
 | `GROQ_API_KEY2` | `dvwa-security-report.yml` |
+| `OPENAI_API_KEY2` | `dvwa-security-report-openai.yml` |
 | `OPENROUTER_API_KEY2` | `dvwa-security-report-openrouter.yml` |
 | `HF_TOKEN2` | `dvwa-security-report-huggingface.yml` |
 | _(none)_ | `dvwa-security-report-local.yml` |
 
-All six secrets above are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that workflow's gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__`/`HuggingFaceSecurityProvider.__init__` raises when the key is missing -- the other workflows are unaffected, since they're independent runs. The "local" workflows can't hit this failure mode at all (no key to be missing), at the cost of the CPU-only speed/fidelity trade-off described in [LLM providers](#llm-providers) above.
+All eight hosted-provider secrets above are repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret). Without the relevant one, that workflow's gate step fails immediately with the `RuntimeError` `GroqSecurityProvider.__init__`/`OpenAISecurityProvider.__init__`/`OpenRouterSecurityProvider.__init__`/`HuggingFaceSecurityProvider.__init__` raises when the key is missing -- the other workflows are unaffected, since they're independent runs. The "local" workflows can't hit this failure mode at all (no key to be missing), at the cost of the CPU-only speed/fidelity trade-off described in [LLM providers](#llm-providers) above.
 
 The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the target application to be committed into this repository.
 
@@ -325,7 +353,7 @@ The workflows clone OWASP Juice Shop / DVWA during CI instead of expecting the t
 
 - The deterministic gate is the final authority. The LLM is advisory but integrated into the decision pipeline.
 - `targets/juice-shop` and `targets/dvwa` are intentionally ignored by git so this thesis repository can be published cleanly on GitHub.
-- `openai/gpt-oss-20b` (via Groq, Hugging Face's Inference Providers router, or a quantized GGUF build run locally via llama.cpp) is the primary model; `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) is available as an alternative -- see [LLM providers](#llm-providers) above. Groq, OpenRouter, and Hugging Face are hosted APIs; the local llama.cpp provider is the only one that loads model weights on the machine running it, and exists as a no-API-key fallback for when hosted quota/credits run out.
+- `gpt-5.6-luna` (via OpenAI), `openai/gpt-oss-20b` (via Groq, Hugging Face's Inference Providers router, or a quantized GGUF build run locally via llama.cpp), and `meta-llama/llama-3.3-70b-instruct` (via OpenRouter) are all available -- see [LLM providers](#llm-providers) above. OpenAI, Groq, OpenRouter, and Hugging Face are hosted APIs; the local llama.cpp provider is the only one that loads model weights on the machine running it, and exists as a no-API-key fallback for when hosted quota/credits run out.
 - The current prototype is optimized for reproducible thesis experiments rather than production deployment hardening.
 
 ## Further documentation

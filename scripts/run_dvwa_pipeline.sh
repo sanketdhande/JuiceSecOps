@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 # DVWA counterpart to run_juice_shop_pipeline.sh: clone DVWA -> Semgrep ->
 # Trivy -> ZAP -> `python -m juicesecops` (src/juicesecops/), which is where
-# the LLM diff-review + triage stages run (see pipeline.py). Both providers
-# are hosted APIs -- no model weights ever run on this machine. PROVIDER
-# selects groq (default: calls Groq's hosted API for MODEL_ID,
-# providers/groq.py -- needs `pip install -e '.[dev]'` and a GROQ_API_KEY
-# in the environment) or openrouter (calls OpenRouter's official SDK
-# instead, providers/openrouter.py -- needs
-# `pip install -e '.[openrouter,dev]'` and an OPENROUTER_API_KEY in the
-# environment).
+# the LLM diff-review + triage stages run (see pipeline.py). PROVIDER may
+# be groq/openai/openrouter/huggingface/local. OpenAI, Groq, OpenRouter,
+# and Hugging Face are hosted APIs -- no model weights ever run on this
+# machine for them. The optional third argument overrides the provider's
+# own default model id.
 #
 # Unlike Juice Shop (a single Node container with no setup step), DVWA is a
 # PHP app with a MariaDB backend and ships its own docker-compose stack
@@ -20,9 +17,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_REPO="${1:-${ROOT_DIR}/targets/dvwa}"
 PROVIDER="${2:-groq}"
-MODEL_ID="${3:-openai/gpt-oss-20b}"
+MODEL_ID="${3:-}"
 OUTPUT_DIR="${ROOT_DIR}/results/dvwa"
 DVWA_URL="http://127.0.0.1:4280"
+MODEL_ARG=()
+
+if [ -n "${MODEL_ID}" ]; then
+  MODEL_ARG=(--model-id "${MODEL_ID}")
+fi
 
 mkdir -p "${OUTPUT_DIR}"
 chmod 777 "${OUTPUT_DIR}"
@@ -109,7 +111,7 @@ PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}" python3 -m juicesecops \
   --input "${OUTPUT_DIR}/trivy.json" \
   $ZAP_INPUT \
   --provider "${PROVIDER}" \
-  --model-id "${MODEL_ID}" \
+  "${MODEL_ARG[@]}" \
   --target-repo "${TARGET_REPO}" \
   --policy "${ROOT_DIR}/config/policy-dvwa.toml" \
   --base-ref "${EMPTY_TREE}" \

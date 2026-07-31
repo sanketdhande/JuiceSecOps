@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-# This is the orchestrator called from cli.py: main(). The `provider` argument
-# is a SecurityProvider (providers/base.py) -- GroqSecurityProvider (default,
-# providers/groq.py) or OpenRouterSecurityProvider (providers/openrouter.py),
-# both hosted APIs with no local model weights. The provider is used in
+# This is the orchestrator called from cli.py: main(). The `provider`
+# argument is any SecurityProvider (providers/base.py) -- OpenAI, Groq,
+# OpenRouter, Hugging Face, Local, or a test double -- and is used in
 # exactly two places below: provider.review_change() (the LLM "finds new
-# bugs in a diff" stage) and provider.triage() (the LLM "judge severity of a
-# finding" stage). Everything else here (parsing scanner JSON, dedup,
+# bugs in a diff" stage) and provider.triage() (the LLM "judge severity of
+# a finding" stage). Everything else here (parsing scanner JSON, dedup,
 # redaction, the pass/fail gate) is deterministic Python with no model
 # involved.
 import hashlib
